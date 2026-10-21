@@ -99,7 +99,7 @@ A port left on Standard is never driven: its read is the old plain read, byte fo
 **Evidence.**
 - 4.1 switched the detection off (a build switch kept it for experiments), and 4.1.1 replaced it with the option and removed the probe code.
 - Tested in WinUAE with a build that dumps the raw pad bits into a keyboard matrix row: the option bytes load, each port's path runs, the plain configuration is byte-identical to before, and nothing spurious reaches the MSX. WinUAE's emulated pad never answered in the test harness (its keyboard-layout joystick is not live there), so the protocol itself was verified against WinUAE's source and not against a running pad.
-- The notes recorded the real-pad checks as still to do (Gradius 2's power-up on blue, a direction plus jump in Pampas & Selene, and a plain joystick still working on Standard).
+- Checked afterwards on a real A1200 with a KTRL CD32 pad and a Mega Multi adapter in CD32 mode: both fire buttons, Start/Play pausing, and the extra buttons work; a plain joystick on Standard is unchanged.
 
 **Look up.** Commits bee6430, 38d0b84, 4212d25; `PrefCD32`, `PrefCD32M`; notes in `Docs/open_issues.md` (the three CD32 entries).
 

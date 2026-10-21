@@ -7,6 +7,8 @@ Practical notes from two emulator projects for AGA Amigas:
 
 Both projects target a real A1200 with a PiStorm (Emu68), a 68030/50 A1200, and the BigMig/MiSTer Minimig core. They are developed with WinUAE and a reference emulator on a PC, and tested on the real machine. Much of the work was done by AI coding agents working alongside a human tester. These notes are for both kinds of reader: developers starting a similar project, and agents briefed to work on one.
 
+Commit hashes and `Docs/agent_notes/` files referred to in the lessons belong to the development repositories; the public repositories carry squashed release commits, so look up the build switch or symbol name there.
+
 Each lesson shows real code **before and after** a fix, the symptom it caused, and the evidence that the fix worked. See [STYLE.md](STYLE.md).
 
 ## Chapters

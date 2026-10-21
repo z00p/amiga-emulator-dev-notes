@@ -1,6 +1,6 @@
 # Display on AGA
 
-*Reading notes.* The examples come from AmiMSX, which converts the MSX video chip (the VDP) into AGA bitplanes and builds a copper list for every frame. "Commit" references name the AmiMSX development repository. The public repository carries squashed commits, so there the build switch, the symbol name and the notes file are the stable things to look up. Lessons marked *4.2* are fixes made after the 4.1.2 release.
+*Reading notes.* The examples come from AmiMSX, which converts the MSX video chip (the VDP) into AGA bitplanes and builds a copper list for every frame. "Commit" references name the AmiMSX development repository. The public repository carries squashed commits, so there the build switch and the symbol name are the stable things to look up; the `Docs/agent_notes/` files are working notes kept in the development repository only. Lessons marked *4.2* are fixes made after the 4.1.2 release.
 
 ## Copper lists built per frame, and racing the beam on fast CPUs
 
@@ -64,7 +64,7 @@ VDP2L0L:
 - Unfixed build, live-view capture: one fighter missing in 7 of 12 consecutive frames. Fixed build: both fighters in all 12.
 - The late path fires on every flip on the 68030 configuration and in 4 of 12 frames on the WinUAE 68060 configuration (the beam is often already in the picture at the flip, even on a fast CPU). Both fighters were present in all 24 frames, and the picture below the event used the right pointers.
 - Smoke regression: 15 of 15 titles, 45 of 45 captures identical to the baselines.
-- Checked in WinUAE only. The check on the real PiStorm was still to be done when the notes were written.
+- Confirmed afterwards on the real PiStorm A1200: fighters and the goblin solid in play.
 
 **Look up.** Commits c853172 (analysis), 5d15cdf, 68acad3, ed6e595, 5aa7633. Build switches `SNAPLIVE` (see chapter 06), `NOL0` (old behaviour), `L0DEBUG` (red border from the late event's line). Notes: `Docs/agent_notes/barbarian.md`. Known limits: R#23 changed in the border too, pointer splits below line 0, page wrap.
 

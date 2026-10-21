@@ -46,7 +46,7 @@ printf '\tDC.B\t"%s %s"\n' "$(date +%d.%m.%Y)" "$h" > buildid.i
 | Manbow 2 title | Black on the 68030 configuration | Fragments on the PiStorm: same cause (the frame's DMACON word) |
 | Power meter boxes | Reproduced from the game's own BASIC listing | Reported with photos |
 | CD32 pad detection | Could not be driven in WinUAE's harness | Failed on a real pad and an adapter |
-| Colours "too bright" | Captures looked cream and white; the capture path was found to boost contrast (below) | No report in the notes from real video |
+| Colours "too bright" | Captures looked cream and white; the capture path was found to boost contrast (below) | On the A1200, a tester confirmed the corrected levels look right on a real TV (the sky salmon, as in the reference emulator); the earlier "too bright" look was only in the captures |
 
 **Look up.** `tools/buildid.sh`; `winuae/` (configurations, `batch_test.ps1`); `Docs/regression.md`; `tools/read_perf.py` (decodes `perf.bin`: load as a percentage of an Amiga frame).
 
