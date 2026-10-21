@@ -203,9 +203,9 @@ openMSX takes a screenshot every frame with throttling on. The flicker score cou
 
 ### A SNAP freezes after the render, which is the one moment that is always consistent
 
-**Problem.** Barbarian's fighters vanished on the PiStorm but never in a SNAP capture, in the 68030 or the 68060 configuration, over several earlier checks.
+**Problem.** Barbarian's fighters vanished on the PiStorm but never in a SNAP capture; an earlier WinUAE check (10 to 11 Oct) was clean.
 
-**Why the captures missed it.** A SNAP freezes after the emulated frame has been rendered. At that moment the copper list and the bitplanes agree. A very fast CPU has already run into the next frame's border (the page restore of chapter 02) by the time the beam is drawing the picture, so the beam sees the new bitplanes with the old list. A cycle-exact 68030 at 50 MHz is too slow to show it, and the WinUAE 68060 configuration is not cycle-exact either.
+**Why the captures missed it.** The captures missed it because of when they freeze, not because of the CPU. A SNAP freezes after the emulated frame has been rendered. At that moment the copper list and the bitplanes agree. On a real machine the Z80 core carries on into the next MSX frame while the beam is still drawing: a very fast CPU has already run the next frame's border (the page restore of chapter 02) by the time the beam reaches the fighters, so the beam sees the new bitplanes with the old list.
 
 **Before** (`KeyScrSnap`, AmiMSX 4.1.1):
 
@@ -225,7 +225,7 @@ KeyScrSnap:
 	MOVE.W	-2(A0),SnapLvN		; (debug) Freeze at the next display start.
 	ELSE
 	MOVE.W	-2(A0),SnapPend		; Freeze after this frame's render.
-	ENDIF
+	ENDC
 ...
 MiraInter0:
 	IFD	SNAPLIVE

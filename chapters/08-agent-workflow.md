@@ -1,6 +1,6 @@
 # Agent workflow
 
-*Reading notes.* AmiMSX 4.1.2 was largely made by AI coding agents (several sessions of Claude Code), each given one fault to investigate, with a human owner who tests on the real machines, decides what ships and does every publishing step. These sections record what worked and what went wrong. Commit references name the AmiMSX development repository; the public repository carries squashed commits.
+*Reading notes.* AmiMSX 4.1.2 was largely made by AI coding agents, each given one fault to investigate, with a human owner who tests on the real machines, decides what ships and does every publishing step. These sections record what worked and what went wrong. Commit references name the AmiMSX development repository; the public repository carries squashed commits.
 
 ## Briefing an agent: one track, evidence, WIP commits
 
@@ -74,7 +74,7 @@ WIP (agent cut off by the session limit, 19 Oct 2026): uncommitted work saved as
 
 ### A lock made with `mkdir`, and the one-character mistake that deleted another session's lock
 
-**Problem.** Several sessions (the MSX emulator, the CPC emulator, a core for another machine) shared one WinUAE installation and one physical A1200. Two WinUAE runs at once corrupt each other's captures and configurations.
+**Problem.** Several sessions (two emulators and an FPGA core project) shared one WinUAE installation and one physical A1200. Two WinUAE runs at once corrupt each other's captures and configurations.
 
 **Design.** The lock is a directory. `mkdir` is atomic: it succeeds for exactly one taker. Rules: check that no emulator process is running; `mkdir` the lock; if it fails, do not run and retry every 60 s, giving up after 20 min; hold it at most 15 min (split a long tier into several holds); take it right before a run and remove it right after, never while reading or thinking; a lock older than 30 min with no emulator process is stale and may be removed first.
 
@@ -107,11 +107,11 @@ mkdir build/winuae.lock && { <run>; rmdir build/winuae.lock; }
 ```
 ## Running
 | Session | Job | Agents | Started | Expected end |
-| Vectrex | core build (CPU-heavy, no agents) | 0 | 21 Oct ~08:30 | ~10:00 |
+| core project | FPGA core build (CPU-heavy, no agents) | 0 | 21 Oct ~08:30 | ~10:00 |
 
 ## Done
 | Session | Job | Ended | Notes |
-| AmiMSX | 4.1.2 beta release (full regression, LHA in WinUAE, upload, GitHub) | 21 Oct 08:20 | lock released |
+| MSX project | 4.1.2 beta release (full regression, LHA in WinUAE, upload, GitHub) | 21 Oct 08:20 | lock released |
 ```
 
 with these rules:

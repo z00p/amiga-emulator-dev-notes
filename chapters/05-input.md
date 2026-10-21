@@ -6,7 +6,7 @@
 
 ### Drive pin 6 high before pin 5 falls
 
-**Problem.** A CD32 pad is a shift register behind the joystick port. In its plain mode it behaves like a two-button joystick (red on pin 6, blue on pin 9). In CD32 mode it returns seven buttons one at a time. In the first version of AmiMSX's read the pad dropped out of CD32 mode whenever the red button was held.
+**Problem.** A CD32 pad is a shift register behind the joystick port. In its plain mode it behaves like a two-button joystick (red on pin 6, blue on pin 9). In CD32 mode it returns seven buttons one at a time. A review of the first version of AmiMSX's read predicted that the pad would drop out of CD32 mode whenever the red button was held.
 
 **The protocol, as AmiMSX uses it** (once per frame, joystick port and mouse port in one pass):
 1. Make the pin 6 lines (CIA-A port A bits 7 and 6) outputs, driven high.
