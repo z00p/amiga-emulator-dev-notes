@@ -326,6 +326,53 @@ MaskSet:
 
 **Look up.** Branch agents412/mask; `EDGEL0`, `EDGER0`, `MaskL`, `MaskR`; notes `Docs/agent_notes/mask.md` (branch only). Not checked: the menu, and the 512-dot modes (the window bytes come from one table for all modes, in low-resolution units).
 
+## Leaving the machine as you found it: PAL/NTSC beam timing on exit
+
+### A 60 Hz game left the Amiga in NTSC timing after quitting
+
+**Problem.** After an AmiMSX session that ran a 60 Hz MSX game, other programs opened PAL screens at 59.3 Hz and lost their bottom lines. Another emulator's per-frame logs on the same PiStorm A1200 showed 59.3 Hz instead of 50 Hz from the moment AmiMSX had run, and three of its games were cut off at the bottom until the machine was reset.
+
+**Before** (`AmiMSX_Menu_v3.1.asm`, the quit path, AmiMSX 4.1.2):
+
+```
+	MOVE.B	DirPrefs+$7C(PC),D0	; Screen on Exit: 1 No Change, 2 PAL, 4 NTSC
+	LSR.B	#1,D0
+	BEQ.S	NoChangeCon		; 'No Change' (the default): nothing
+	...				; Force PAL/NTSC: write BEAMCON0
+NoChangeCon:
+	JSR	CLOSEDOWNSCREEN
+	MOVEQ	#0,D0
+	RTS
+```
+
+*Source: AmiMSX 4.1.2, AmiMSX_Menu_v3.1.asm (freeware by Juan Antonio Gómez Gálvez; 4.x changes; used with permission).*
+
+**After** (AmiMSX 4.2, commit 1d8babe):
+
+```
+NoChangeCon:
+	MOVE.L	4.W,A0			; 'No Change' puts the system's own timing back:
+	MOVEQ	#0,D1			; ExecBase->VBlankFrequency, 50 = PAL
+	CMP.B	#50,$212(A0)
+	BNE.S	SysNTSC
+	MOVE.W	#$20,D1			; BEAMCON0 PAL bit
+SysNTSC:MOVE.W	D1,$DFF1DC
+ScrExitSet:
+	JSR	CLOSEDOWNSCREEN
+	MOVE.L	_INTUITIONBASE,A6	; rebuild the display for that timing
+	JSR	-384(A6)		; RemakeDisplay
+	MOVEQ	#0,D0
+	RTS
+```
+
+*Source: AmiMSX 4.2, AmiMSX_Menu_v3.1.asm (freeware by Juan Antonio Gómez Gálvez; 4.x changes; used with permission).*
+
+**Why.** The emulated VDP's 50/60 Hz bit (R#9) is mapped straight onto BEAMCON0's PAL bit while a game runs. BEAMCON0 is write-only, and AmigaOS does not rewrite it when the program quits or when the next program opens a native screen of the same family, so the last value stays. "No Change" was meant as "don't force anything", but in practice it meant "leave whatever the last game set". The system's own setting can be read back from ExecBase (VBlankFrequency, 50 or 60); writing that back and calling RemakeDisplay restores a clean state. Any program that touches BEAMCON0 (or other write-only display registers) should restore it on every exit path, error exits included.
+
+**Evidence.** Reported from the other emulator's logs (59.3 Hz frame timing after AmiMSX, 50 Hz before) and reproduced in WinUAE by forcing NTSC timing. After the fix, on the PiStorm A1200: a 60 Hz game in AmiMSX, quit, then the other emulator's PAL screens run at 50 Hz with the full picture.
+
+**Look up.** Commit 1d8babe; `NoChangeCon` / `ScrExitSet` in `AmiMSX_Menu_v3.1.asm`; Options > Screen on Exit in `AmiMSX.guide`.
+
 ## Intuition screens on OS 3.2: AllocScreenBuffer with Intuition's own bitmaps
 
 *To be written (Arnold).*

@@ -12,6 +12,7 @@ One line per pitfall, with the lesson that explains it. Read the lesson before a
 - Two modes with different plane layouts need separate buffers, and the commands' results must be flushed to VRAM when a mode is left. ([Two bitmap modes in one frame (SCREEN 8 over SCREEN 5)](02-display-on-aga.md#two-bitmap-modes-in-one-frame-screen-8-over-screen-5))
 - Map palette levels with a table to the nearest reference level, and check them against exact register values, not through a capture path that changes colours. ([3-bit levels to 4-bit nibbles: white was $EEE](02-display-on-aga.md#3-bit-levels-to-4-bit-nibbles-white-was-eee))
 - Measure the real display window before sizing an edge mask or a crop. ([The window was exactly the picture, and the mask offsets hid 10 and 12 dots](02-display-on-aga.md#the-window-was-exactly-the-picture-and-the-mask-offsets-hid-10-and-12-dots))
+- Restore BEAMCON0 (PAL/NTSC) and any other write-only display register on every exit path, from the system's own setting, then RemakeDisplay. A program that leaves NTSC timing behind breaks the next program's PAL screens. ([A 60 Hz game left the Amiga in NTSC timing after quitting](02-display-on-aga.md#a-60-hz-game-left-the-amiga-in-ntsc-timing-after-quitting))
 
 ## CPU core
 
