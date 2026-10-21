@@ -302,6 +302,8 @@ gfx_api=directdraw
 
 **Evidence.** In GDI the sky was already salmon. The grey levels were then one step dark, which was a real bug in AmiMSX (chapter 02, "3-bit levels to 4-bit nibbles"). So the "too bright" reports had two causes, a capture-path boost and a real, opposite error, and only comparing exact register values separated them. The GDI configuration was added next to the default one and not made the default, because every baseline would have changed colour.
 
+**Later finding (a full run with GDI as the default).** In a full 84-title regression with GDI output, many captures came out black or only partly drawn: the GDI window is not always fully painted when the snapshot is taken, while the Direct3D output always gives a whole frame. So GDI is for one-off colour checks, where you look at the frame and repeat a bad grab. The regression stays on Direct3D, and its baselines are compared with each other, never with the reference emulator's colours. Lesson: before changing a capture path for a whole suite, run the full suite once with it and check that every frame is complete.
+
 **Look up.** `winuae/AmiMSX-030gdi.uae` (`--config 030gdi` in `tools/regress.py` and `tools/burst.py`); `tools/make_colour_test.py`, `tools/colour_bars.py`; notes `Docs/agent_notes/colours.md`.
 
 ## Real hardware over the network (amimcp)
