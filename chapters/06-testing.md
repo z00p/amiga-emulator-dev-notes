@@ -306,6 +306,34 @@ gfx_api=directdraw
 
 **Look up.** `winuae/AmiMSX-030gdi.uae` (`--config 030gdi` in `tools/regress.py` and `tools/burst.py`); `tools/make_colour_test.py`, `tools/colour_bars.py`; notes `Docs/agent_notes/colours.md`.
 
+## Measuring the reference emulator by display line
+
+### Use the frame event and the vertical-retrace flag, not the interrupt probe
+
+**Problem.** To find where a game writes a register within the frame, the logging scripts anchored time on the reference emulator's vertical-interrupt probe. For some games the probe breakpoint never fired, so every write was logged as frame 0 with an absolute time.
+
+**After.** Anchor each frame on the emulator's own per-frame event (`after frame`, re-armed each time). Calibrate the display line once from the game's own reads of status register 2: the vertical-retrace bit turns on at the end of the last display line. Then display line = (time since the frame event - the retrace offset) / line length + 212.
+
+**Why.** A frame event fires whatever the game does with its interrupts. The line length matters: a V9938 line is 1368 cycles at 21.477 MHz, 63.695 microseconds. A script that divides by 64 microseconds drifts by about 1.5 lines over a frame.
+
+**Evidence.** Jailbreak, 200 frames: the retrace bit came on at the same offset in every frame (spread 0.2 lines). That fixed the HUD palette restore at display line 231.5 in every frame, which located the fault (the emulator wrote it at line 210).
+
+### Status-register polls tell you how long a video command is busy
+
+Log every status-2 read with the value the game sees (read through the debugger, so the read has no side effects) and every write to the command registers. The first read with CE clear after a command starts bounds its duration from above. This gave the reference durations for the command-timing model without access to the emulator's internal tables.
+
+## A control build separates a timing change from a regression
+
+**Problem.** After a timing change (command busy time) 10 of 15 smoke titles changed, including an MSX1 game that never uses the video commands. The changes could have come from the timing model, from an unrelated change merged at the same time, or from layout effects.
+
+**After.** Build the same source with the new code switched off (`-DNOCETIME=1`) and run the changed titles with it. All 10 matched the old baselines, so the timing model alone caused the shifts. Then explain the outliers: the MSX1 game shifted because the BIOS clears video memory with a block command at power-on, and that clear now takes about three frames.
+
+**Why.** A change in emulated timing moves every later event by a few frames, and a scripted run then captures a different moment of play. Such a shift is not a fault, but you can only say so once a control run has shown that nothing else changed. Compare a few captures with the reference emulator as well: one title now matched it where it had not before.
+
+## Live window grabs need GDI output
+
+The harness can grab WinUAE's window back to back while the game runs (no freeze), to catch beam races that after-render captures cannot show. With WinUAE's default Direct3D output at real-time speed, Windows' window capture (PrintWindow) returns a blank white window: 50 of 50 grabs were empty. Use a real-time config with `gfx_api=directdraw` for live grabs. The grab rate is about 18 per second, so a one-frame fault needs a few hundred grabs to be caught.
+
 ## Real hardware over the network (amimcp)
 
 *To be written (Arnold).*

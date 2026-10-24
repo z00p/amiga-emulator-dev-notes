@@ -24,6 +24,8 @@ One line per pitfall, with the lesson that explains it. Read the lesson before a
 - Implement every parameter of a command (the logical operation of LINE), or a game that uses it will show the gap. ([A command that ignored the logical operation (VDP LINE)](03-cpu-cores.md#a-command-that-ignored-the-logical-operation-vdp-line))
 - Never read host state (the beam) for an emulated register: it makes runs unrepeatable. ([Repeatable runs: `LD A,R` from emulated time](06-testing.md#repeatable-runs-ld-ar-from-emulated-time))
 - Write branches to labels, never as `*+n`, and have the build refuse the pattern. ([Hand-counted branches break when the layout changes](07-toolchains-release.md#hand-counted-branches-break-when-the-layout-changes))
+- A video-chip command that finishes instantly is a timing change: games pace mid-frame work on the busy flag. Keep drawing at once, but report busy for the real duration. ([A command that finishes instantly moves the game's mid-screen work up the frame](03-cpu-cores.md#a-command-that-finishes-instantly-moves-the-games-mid-screen-work-up-the-frame))
+- Measure instruction costs; do not only read them. An empty macro argument cost DAA four cycles since 4.0. ([A generated test cartridge and a trace of the line counter find cost bugs that reading the code missed](03-cpu-cores.md#a-generated-test-cartridge-and-a-trace-of-the-line-counter-find-cost-bugs-that-reading-the-code-missed))
 
 ## Input
 
@@ -43,6 +45,9 @@ One line per pitfall, with the lesson that explains it. Read the lesson before a
 - Do not let a product feature and the harness share a signal (the audio filter keeps the power LED lit). ([The power LED is the harness's signal](06-testing.md#the-power-led-is-the-harnesss-signal))
 - Chain the run behind the lock's `mkdir` with `&&`, hold the lock at most 15 minutes, and run long tiers in chunks. ([A lock made with `mkdir`, and the one-character mistake that deleted another session's lock](08-agent-workflow.md#a-lock-made-with-mkdir-and-the-one-character-mistake-that-deleted-another-sessions-lock))
 - Put debug code behind conditional assembly and check that the release build is byte-identical. ([Debug code must leave the release build byte-identical](07-toolchains-release.md#debug-code-must-leave-the-release-build-byte-identical))
+- After a timing change, run a control build with the change switched off before calling any capture change a regression. ([A control build separates a timing change from a regression](06-testing.md#a-control-build-separates-a-timing-change-from-a-regression))
+- Live window grabs of WinUAE's Direct3D output come back blank; use GDI output for them. ([Live window grabs need GDI output](06-testing.md#live-window-grabs-need-gdi-output))
+- A V9938 line is 63.695 microseconds, not 64. ([Use the frame event and the vertical-retrace flag, not the interrupt probe](06-testing.md#use-the-frame-event-and-the-vertical-retrace-flag-not-the-interrupt-probe))
 
 ## Sound and performance
 

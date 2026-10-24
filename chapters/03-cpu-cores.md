@@ -317,6 +317,108 @@ LineMtTab:	DC.B	$CA,$8A,$EA,$6A	; IMP, AND, OR, XOR
 
 **Look up.** Commit fec19c2; `LineMint`, `LineMtTab`; `tests/keys/g3l_pm2.keys` (branch); notes `Docs/agent_notes/g3pm.md` (branch only). The screen is easy to miss in testing: see chapter 06, "scripted keys that skip a screen".
 
+## Video-chip commands: draw at once, but report busy for the real time
+
+### A command that finishes instantly moves the game's mid-screen work up the frame
+
+**Problem.** Jailbreak (MSX2, SCREEN 5) showed a two-line strip in the HUD colours at the bottom of the playfield, in some frames only (WinUAE 68030/50 and PiStorm). The reference emulator showed no strip.
+
+**Cause.** From a line interrupt at display line 200, the game starts three V9938 block commands (two byte copies and a logical copy) and polls status register 2 until its CE (command executing) bit clears before starting the next. Only after the last one does it restore the HUD registers and four palette colours. On the reference emulator the two copies stay busy 12.6 and 10.3 lines, so the restore lands at display line 231, in the bottom border. AmiMSX ran each command at once with the blitter and never set CE, so the three waits ended immediately and the restore landed at line 210. The last display line took the HUD palette.
+
+**Before** (`AmiMSX_Main_v3.1.asm`, the register 46 handler, AmiMSX 4.2): the command was drawn and CE was cleared in the same handler, so a status read straight after it saw "done".
+
+```
+VDP2E:
+	...
+	MOVE.B	D2,DVDPREG(A3)
+	BCLR	#0,DVDPS2(A3)		; execution finished
+	...				; (the blit follows)
+```
+
+**After** (commit bd53ebb, switch `NOCETIME` to build without): the blit is unchanged; at the start the handler works out when a real VDP would finish (frame, line and cycles left in that line), and every status-2 read reports CE until then.
+
+```
+CEPOLL:	MACRO				; in each S#2 read handler, D1 only
+	TST.B	CEPend
+	BEQ.S	\@X
+	MOVE.W	CmdFrN,D1		; frames since power-on (frame start)
+	SUB.W	CEEndFr,D1
+	BMI.S	\@B			; end in a later frame: busy
+	BNE.S	\@D			; in an earlier one: done
+	MOVE.W	CurLine(A3),D1
+	CMP.W	CEEndL,D1
+	BCS.S	\@B
+	BHI.S	\@D
+	MOVE.W	(A3),D1			; the end line: cycles left count down
+	CMP.W	CEEndLeft,D1
+	BLE.S	\@D
+\@B:	BSET	#0,D2			; CE set in the value returned
+	BRA.S	\@X
+\@D:	SF	CEPend
+\@X:
+	ENDM
+```
+
+*Source: AmiMSX 4.3 (development), AmiMSX_Main_v3.1.asm (freeware by Juan Antonio GÃ³mez GÃ¡lvez; 4.x changes; used with permission).*
+
+**Why.** Games pace their own mid-frame work on the video chip's busy flag, so "instant" is a timing change, not a speed-up. The model costs nothing per line: the end time is computed once when the command starts and only compared when a game reads the status register. The costs come from the reference emulator's per-access timing (VDP cycles, 1368 a line): 48 a byte for a fill (HMMV), 88 for a byte copy (HMMM), 64 for YMMM, 96 a dot for a logical fill, 120 for a logical copy, 112 a dot plus 32 a minor step for LINE, plus 56 to 64 a row. Inside the display window the chip gets fewer memory slots: the model multiplies by 3/2 with sprites on and 5/4 with them off. The time is walked through display and blank segments, so a long command can end frames later.
+
+**Evidence.**
+- End lines, model vs reference emulator, for Jailbreak's two copies: 216.7 vs 216.6, and 228.3 vs 228.6. A full-screen fill at power-on (256 by 212): about 961 lines vs about 982.
+- Jailbreak bursts at 58, 60 and 62 s: flicker score 170 before, 0 after (reference 0).
+- Side effect: 10 of 15 smoke titles shifted in time (play reached a different moment at each capture), with no corruption. With the model switched off (`NOCETIME`), all 10 matched the old baselines again, which proves the shift came from the model and nothing else. Every game that waits for the chip, including the BIOS's own clear at power-on, now waits as long as on a real MSX.
+
+**Look up.** Commit bd53ebb; `CETime`, `CEPOLL`, `CEPend`; switch `NOCETIME`; notes `Docs/open_issues.md` (Jailbreak).
+
+## Auditing every opcode's cycle count against a reference table
+
+### A generated test cartridge and a trace of the line counter find cost bugs that reading the code missed
+
+**Problem.** A user asked whether AmiMSX counts the MSX's M1 wait state. It did, but an earlier audit had only read the handlers against the reference emulator's source. Two costs were still wrong.
+
+**Method.**
+1. A generator (`tools/make_z80time.py`) reads a published Z80 timing table (the "Z80+M1" column) and writes a cartridge that runs every documented instruction once, in a straight line: each register, bit and condition, conditional jumps taken and not taken, block instructions with one repeat. Each test is preceded by a restore block, so memory operands always point into RAM, the stack stays valid, and jump targets are simply the next instruction.
+2. A trace build (`-DTRACE=1 -DCYCLOG=1`) logs, at each instruction, its address and the line's remaining cycle counter. The cost of an instruction is the drop to the next entry, plus one line's worth when a line ended in between.
+3. A reader (`tools/read_z80time.py`) matches entries to tests and prints every difference.
+
+**Before** (AmiMSX 4.2): the DAA handler used its dispatch macro without a cycle count, so only the M1 wait was charged:
+
+```
+DAA:
+	...
+	OtraDAA				; macro: Otra \1  ->  Otra (empty) = 1 cycle
+```
+
+and the prefix tables pointed DD/FD + a plain `LD r,r'` straight at the unprefixed handler, so the prefix cost 1 cycle instead of 5:
+
+```
+INSDD:	...
+	DC.L	LDBB,LDBC,LDBD,LDBE,LDBHX,LDBLX,LDBIX,LDBA	; 40
+```
+
+**After** (commit c7e8078):
+
+```
+	OtraDAA	4			; DAA is 4 T-states (+1 M1 wait)
+...
+	DC.L	NOCO,NOCO,NOCO,NOCO,LDBHX,LDBLX,LDBIX,NOCO	; 40
+```
+
+`NOCO` charges the prefix as a 4-cycle NOP (plus its M1 wait) and re-dispatches the opcode, as the table already did for every other plain opcode.
+
+*Source: AmiMSX 4.3 (development), AmiMSX_Main_v3.1.asm (freeware by Juan Antonio GÃ³mez GÃ¡lvez; 4.x changes; used with permission).*
+
+**Why.** Both bugs are invisible when you read the handler (the right macro is there) and only show up when you measure. A macro with an empty argument assembles quietly in Devpac mode.
+
+**Evidence.** First run: 906 of 959 matched. After the two fixes: 957 of 959. The two left (CPIR/CPDR, a flat charge for the whole search) are deliberate: charging per repeat once drove the line counter far negative inside a disk BIOS directory search and hung the boot.
+
+**Three traps in the method.**
+- **Interrupts.** The table includes EI, RETN and IM 2, so a straight-line test leaves interrupts on, in IM 2 mode, partway through. The next frame interrupt jumped through a random vector into RAM, ran 15,000 bytes of zeros and came back through a stray RET. Put a DI at the start of every restore block.
+- **Other slots at the same addresses.** The trace ring also holds BIOS and disk-ROM code that runs at the cartridge's addresses in other slots. Keep only the entries after the cartridge's first instruction's last appearance.
+- **The table's notation.** The table writes a 16-bit operand as two tokens, `nn nn`, one per byte. Reading each `nn` as a word made every jump land two bytes too far.
+
+**Look up.** Commits a090efa, c7e8078, ec66147; `tools/make_z80time.py`, `tools/read_z80time.py`, switch `CYCLOG`; `Docs/z80_audit.md`.
+
 ## I/O at the right cycle within an instruction
 
 *To be written (Arnold).*
