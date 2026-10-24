@@ -336,12 +336,77 @@ The harness can grab WinUAE's window back to back while the game runs (no freeze
 
 ## Real hardware over the network (amimcp)
 
-*To be written (Arnold).*
+*Arnold.* Arnold is an ordinary AmigaOS program, so the real A1200 can be driven from the PC while the emulator runs in the operating system. This section says what that gives us and what it costs; the practical traps of the machine itself are in [chapter 11](11-test-machine.md).
+
+**How we use it.** A small agent on the Amiga ("amimcp") lets the PC run shell commands, read and write files, take screenshots, send keys and mouse clicks, and list screens, through an MCP server. For measurements we do not drive the program interactively: the PC writes a short AmigaDOS script, the script runs the program with a fixed key script and a per-frame log (chapter 10), the results land in a directory on a network share, and a Python reader on the PC prints the figures. A run of 2250 frames takes under a minute and can be repeated, interleaved with another build, for hours.
+
+**What it gives**
+- Real numbers. WinUAE's JIT 68040 says whether the picture is right; only the PiStorm says whether the frame fits in 20 ms (chapter 10).
+- Unattended runs, for example overnight, with the machine left at Workbench at the end.
+- Precise logs: a time for every frame, the chip bytes written, audio underruns, the measured vertical blank time.
+
+**What it costs**
+- One machine, and turn-taking: only one session can use it at a time, and the tester wants it too. Check what is running first, and write the use in the shared coordination file (chapter 08).
+- It is fragile. A reboot leaves the network down until someone goes online on the Amiga (chapter 11), and a stuck network copy can wedge every later command.
+- No view of the real TV or speaker. The remote screenshot is the screen as the machine saw it (chapter 11 lists what it cannot show). Colour, flicker and sound still need the tester.
+- Run-to-run noise: the same binary varies by up to about 0.6 ms a frame between runs (chapter 10), so compare builds in turn and more than once.
+- Security: the agent is a remote shell on the local network protected by a token. Use it only on a home network that you trust.
+
+**Practicalities.** The ones that cost us time are collected in [chapter 11](11-test-machine.md): [programs started with `Run` do not get the shell's stack](11-test-machine.md#a-program-started-with-run-does-not-get-the-shells-stack), [brackets in paths act as wildcards](11-test-machine.md#brackets-are-wildcards-for-copy-and-list), [what the remote screenshot cannot see](11-test-machine.md#driving-the-screen-remotely), [the network after a reboot](11-test-machine.md#after-a-reboot-the-network-may-stay-down), and [starting an icon from a script](11-test-machine.md#starting-a-workbench-icon-from-a-script).
+
+**Look up.** `tools/vscroll/a1200_run.sh` and `tools/sprites/stats.py` in the development repository; notes `SONIC-SPEED.md`, `PERF50.md`; chapter 08 for how to brief an agent to use it.
 
 ## A headless x86 host with per-frame checksums
 
-*To be written (Arnold).*
+*Arnold.* The emulator core is plain C, so the same source also builds as a small program for a PC with no window and no sound: the headless host (`arnold/src/headless`). It runs a game for a given number of frames and writes out what it did. This is the cheapest test we have, and most of the work in this book was checked with it first.
+
+**What it does.** The host is driven by environment variables: the hardware (`HW`), the cartridge, disk, tape and key-script files, `FRAMESUM` (a checksum of every drawn frame, over the RGB values, because palette index numbers may change), `RAMOUT` (the 64 KB of RAM at the end), `RAWIDX` and `RAW16` (the raw mixed sound), `TRACE_FROM` (a trace of the video-chip and ASIC writes with their raster position), `UNDRAWN` (reports any row of any frame the core did not draw), and for media `DISKWB` and `TAPEFAST`.
+
+**The checks we run with it.**
+
+1. **The homebrew check.** About 150 small freely available programs run to a few fixed frame numbers; the checksums are compared with those of the same program built from a reference git commit. Result in the notes: "150 same, 0 different" means the change is invisible there. A change that is meant to alter the picture must show a count of different programs you can explain (for example 8 of 150 for the I/O-lead fix, all of them games with many writes to the ASIC page).
+2. **Whole-run checksums.** The big games (Sonic GX with two key scripts, 2300 and 4400 frames; Ghouls'n Ghosts GX; Puzzle Bobble; Burnin' Rubber) are built once with a change and once with its `NO_x` switch and every frame's checksum is compared. Identical means the change is exact, which is what every speed change must be (chapter 10).
+3. **Equivalence tests for hot code.** The new c2p was compared with the old loop on 2 million random lines, the scroll table with the loop on 280 million random inputs, and the new sprite merge with the full loop on every call of a check build.
+4. **Profiles.** callgrind on the same run shows which functions are hot (a guide only: chapter 10 shows why x86 counts mislead on Emu68).
+5. **Traces against the reference emulator.** The reference emulator was patched to print the same writes with the same raster position (a private patched copy, never published). Plot "our position minus its position" in characters. This is how the Pinball Dreams and Sonic GX write timing was found (chapter 03).
+
+**Limits.** (1) The host's `long` is 64 bits, the Amiga's is 32: a 32-bit overflow and a table read past its end both gave correct recordings on the PC and wrong sound on the Amiga (chapter 04). (2) Timing is not measured. (3) Nothing here shows what the beam shows; chapter 02 and the audit below do.
+
+**Second leg: WinUAE regression** (`tools/regress.py`). Tiers: `smoke` (the titles marked in a table, 7 in 1.0), `full`, or named ids. All titles run in one WinUAE boot of a PiStorm-like configuration; an AmigaDOS script runs Arnold once per title with its key script, in a no-wait mode (`TURBO`). Arnold itself writes each requested `SNAP` as an exact CPC frame (a PNG of the core's frame) and a "done" file at quit, so no screen grabs are involved and none of the capture colour problems of the AmiMSX sections of this chapter apply. The report compares pixel for pixel with the accepted baseline and lists new, changed and missing captures with a side-by-side sheet. One capture (Burnin' Rubber, frame 400) has been "changed" since the Pinball Dreams timing work, with the same box every time; it is recorded as known so a new change stands out.
+
+**Look up.** `arnold/src/headless`, `tools/regress.py`, `tools/perf50/cmp.sh`, `tools/dskwb_tests.py`, `tools/tape/tape_tests.py`.
 
 ## NO_x switches and AUDIT mode
 
-*To be written (Arnold).*
+*Arnold.* Every behaviour change in Arnold since 0.6 sits behind a `NO_x` define that restores the old behaviour exactly. The discipline is more useful than it sounds, and the AUDIT mode answers the question "is the bug in the emulator or in the display?".
+
+### One switch per change, and what it buys
+
+**Rule.** A change gets a name (`NO_IOTIME_FIX`, `NO_MONLINE_FIX`, `NO_SNDAA`, `NO_VSHIFT`, `NO_DSK80`, ...) and a comment where it is made:
+
+    #ifndef NO_PALBEAM
+        ... new behaviour ...
+    #endif
+    /* NO_PALBEAM: leave the beam as it was */
+
+and the top of a feature's file lists its switches, with the "exact path": which set of switches reproduces the previous release (for example `-DNO_ASICTIME -DNO_DMAPHASE` gives the build before the Plus timing work). Run-time switches that users may want (`NOVSHIFT`, `TALL`, `WIDE`, `FASTTAPE=0`, `DISKWRITE=0`) are arguments, ToolTypes and preferences as well.
+
+**What it buys.**
+1. **Exactness tests.** A speed change must give identical frames with and without its switch (chapter 10); a fix gives identical frames except where it is meant to differ. With all the sound switches defined, the sound output was byte-identical to the previous release on two games.
+2. **Bisecting a merge.** After merging the speed work with the timing work, 358 of 2300 Sonic frames changed. Switching changes off one at a time showed that `-DNO_EMUBR` alone made the frames identical, which led to the negative cycle count of chapter 03. Without the switches this would have been a search through the whole merge.
+3. **A/B on the machine.** Build the same source with and without a switch and run both on the A1200 in turn (chapter 10).
+4. **A fallback for users.** A tester can run the previous behaviour from the same binary or build set while a fix is being checked.
+
+**Costs.** More `#ifdef`s; and a profile-guided build keys its profile on function order and line numbers, so adding a switch in hot code needs a new profile (chapter 10).
+
+### AUDIT: telling an emulator bug from a display bug
+
+**Problem.** The tester saw a dark row "a third of the way down" in Pinball Dreams on the A1200, and the top row of the score was cut. Is the picture wrong in the core, in the conversion to bitplanes, or on screen?
+
+**What AUDIT does** (`amiga_sys.c`, argument `AUDIT`; commit d66764c). After each conversion the program reads every converted buffer back from chip RAM and compares it with a plain, slow c2p of the same chunky frame; it also compares the hardware copper list's `BPL1PT` with the plane pointer of the buffer it expects to be shown, which proves that `ChangeScreenBuffer` picked up a moved display window. The counts go into the performance report and the first mismatches into the log.
+
+**Three stages, three tools.** (1) The core's frame: the menu's Screenshot saves the core's chunky frame exactly, and the headless host can do the same on a PC. (2) The bitplanes in chip RAM: AUDIT. (3) What the beam shows: a screen grab (chapter 11 says what it cannot see). A fault that is in (1) is the core; in (2) the conversion; only in (3) the display set-up (overscan, beam, window).
+
+**Evidence.** Pinball Dreams: the dark row did not appear at any stage we could test. The core's frames had no isolated dark row (101 scroll frames and 61 play frames checked, and a switch that reports undrawn rows found none); 371 audited WinUAE frames had 0 bad rows and 371 of 371 copper checks correct; 82 real-time grabs showed no dark line. That placed it outside the core and the conversion, and the tester was given Screenshot and AUDIT to place it on the A1200. The cut score row was the display window; the TALL option (chapter 02) fixed it, audited over 9256 frames with 0 bad. For the vertical shift: 2250 frames, 0 bad rows, 2250 of 2250 copper checks, on WinUAE and on the A1200.
+
+**Look up.** Commit d66764c; `VSCROLL.md`, `PINBALL.md`.
