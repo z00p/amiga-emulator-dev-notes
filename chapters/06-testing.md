@@ -330,9 +330,9 @@ Log every status-2 read with the value the game sees (read through the debugger,
 
 **Why.** A change in emulated timing moves every later event by a few frames, and a scripted run then captures a different moment of play. Such a shift is not a fault, but you can only say so once a control run has shown that nothing else changed. Compare a few captures with the reference emulator as well: one title now matched it where it had not before.
 
-## Live window grabs need GDI output
+## Live window grabs run on the wall clock, the key script on MSX frames
 
-The harness can grab WinUAE's window back to back while the game runs (no freeze), to catch beam races that after-render captures cannot show. With WinUAE's default Direct3D output at real-time speed, Windows' window capture (PrintWindow) returns a blank white window: 50 of 50 grabs were empty. Use a real-time config with `gfx_api=directdraw` for live grabs. The grab rate is about 18 per second, so a one-frame fault needs a few hundred grabs to be caught.
+The harness can grab WinUAE's window back to back while the game runs (no freeze), to catch beam races that after-render captures cannot show. Its schedule is wall-clock seconds, but the key script that drives the game counts MSX frames. On a real-time config where the emulator runs below full speed (about 70% for a heavy game on a cycle-exact 68030/50), 30 s of wall clock is only about 21 s of MSX time. A first series of 200 grabs "at 30 s" showed the game's white title screen and looked like a capture failure. Schedule real-time grabs from the measured speed, or start them late and grab longer. The grab rate is about 18 per second, so a one-frame fault needs a few hundred grabs.
 
 ## Real hardware over the network (amimcp)
 

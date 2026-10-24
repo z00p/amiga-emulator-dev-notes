@@ -46,7 +46,7 @@ One line per pitfall, with the lesson that explains it. Read the lesson before a
 - Chain the run behind the lock's `mkdir` with `&&`, hold the lock at most 15 minutes, and run long tiers in chunks. ([A lock made with `mkdir`, and the one-character mistake that deleted another session's lock](08-agent-workflow.md#a-lock-made-with-mkdir-and-the-one-character-mistake-that-deleted-another-sessions-lock))
 - Put debug code behind conditional assembly and check that the release build is byte-identical. ([Debug code must leave the release build byte-identical](07-toolchains-release.md#debug-code-must-leave-the-release-build-byte-identical))
 - After a timing change, run a control build with the change switched off before calling any capture change a regression. ([A control build separates a timing change from a regression](06-testing.md#a-control-build-separates-a-timing-change-from-a-regression))
-- Live window grabs of WinUAE's Direct3D output come back blank; use GDI output for them. ([Live window grabs need GDI output](06-testing.md#live-window-grabs-need-gdi-output))
+- Real-time grabs are scheduled in wall-clock seconds while key scripts count MSX frames; below full speed the two drift apart. ([Live window grabs run on the wall clock, the key script on MSX frames](06-testing.md#live-window-grabs-run-on-the-wall-clock-the-key-script-on-msx-frames))
 - A V9938 line is 63.695 microseconds, not 64. ([Use the frame event and the vertical-retrace flag, not the interrupt probe](06-testing.md#use-the-frame-event-and-the-vertical-retrace-flag-not-the-interrupt-probe))
 
 ## Sound and performance
