@@ -49,6 +49,12 @@ One line per pitfall, with the lesson that explains it. Read the lesson before a
 - Real-time grabs are scheduled in wall-clock seconds while key scripts count MSX frames; below full speed the two drift apart. ([Live window grabs run on the wall clock, the key script on MSX frames](06-testing.md#live-window-grabs-run-on-the-wall-clock-the-key-script-on-msx-frames))
 - A V9938 line is 63.695 microseconds, not 64. ([Use the frame event and the vertical-retrace flag, not the interrupt probe](06-testing.md#use-the-frame-event-and-the-vertical-retrace-flag-not-the-interrupt-probe))
 
+- A program started with `Run` does not get the remote shell's `Stack`; put `Stack` and the program in a script and `Execute` it. ([A program started with Run does not get the shell's stack](11-test-machine.md#a-program-started-with-run-does-not-get-the-shells-stack))
+- Brackets in a path are wildcards for `Copy`/`List`: escape them with `'` in a source, reach a destination through an assign. ([Brackets are wildcards for Copy and List](11-test-machine.md#brackets-are-wildcards-for-copy-and-list))
+- Remote screenshots do not show windowed MiniGL output, and SDL programs ignore injected mouse moves; test 3D full screen and drive SDL menus with keys. ([Driving the screen remotely](11-test-machine.md#driving-the-screen-remotely))
+- Never Break a MiniGL program; one 3D context at a time. ([One 3D context at a time, and never Break a 3D program](11-test-machine.md#one-3d-context-at-a-time-and-never-break-a-3d-program))
+- Record the CM4 clock with every performance figure; a weak supply forces a lower clock. ([A marginal power supply looks like random resets under load](11-test-machine.md#a-marginal-power-supply-looks-like-random-resets-under-load))
+
 ## Sound and performance
 
 *To be written (Arnold).*
