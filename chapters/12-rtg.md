@@ -80,11 +80,60 @@ A per-line palette record would round raster splits to line starts and draw them
 
 **Evidence** (bench, A1200, CPC 384x272): 3 buffers, present blocked **8 to 9 ms** on average (min 1.4 ms, max 15.9 ms) at 8, 16 and 32 bit; `DispMessage`s arrived at 60.0 Hz. With one buffer a full-frame present was 0.29 ms (0.17 ms with nothing dirty), and in Arnold the RTG display part is 0.28 ms on average.
 
-**Cost.** A single buffer can tear where the refresh crosses the copy. A full copy is a small share of a 16.7 ms refresh, and a tester judged the motion better than on AGA; the photo test of tearing is still to do. In WinUAE `uaegfx` replies to the flip at once, so no such wait shows there: **measure on the real board.**
+**Cost.** A single buffer written at any time can tear where the refresh crosses the copy. The next section removes that without a flip. In WinUAE `uaegfx` replies to the flip at once, so no such wait shows there: **measure on the real board.**
 
 **A failed lock.** `p96LockBitMap` can fail, and the frame is then skipped. Arnold clears its dirty marks after every present, so the skipped frame's lines must stay owed inside the framework (`rtgc_skip`, commit 2d7d1af); before that fix a skip left a stale picture until the lines changed again. The headless test injects a failure every 61st frame to cover it.
 
 **Look up.** rtgfw commit ab66e76 (bench results); `RTGBUF=3` in Arnold re-enables three buffers for tests.
+
+## No tearing without a flip: write at the vertical blank
+
+### Every flip and every pan spins until the blank
+
+**Problem.** To stop tearing we tried the usual fixes on the A1200: the flip moved into its own task, and two pages swapped with `ScrollVPort`. Each one still cost the emulator a third of the CPU or more, or made frames late.
+
+**Why.** The VideoCore driver busy-waits for the display's vertical blank inside `ChangeScreenBuffer` and inside a pan (`ScrollVPort`), and it holds the board while it spins. A bitmap lock in any other task waits for it. So a flip in a helper task still takes the CPU if the task runs above the emulator, and comes late if it runs below. Two details matter for the fix:
+- the wait returns right at the start of the blank (bench: within -5 to +10 us of the predicted time);
+- a second pan in the same blank returns in about 30 us, and a pan to the page already shown may return at once.
+
+**Evidence** (rtgbench `FLIP`, A1200, 8-bit CPC frame, CPU left for a spin loop in the first 15 ms of each frame):
+
+| Way to present | CPU left | Late or lost frames |
+|---|---|---|
+| Single buffer, written at once | 100% | none (but it can tear) |
+| 3 buffers, `ChangeScreenBuffer` in the emulator task | 36-38% | none |
+| Flip task at the emulator's priority +1 / 0 / -1 | 37% / 72% / 68% | at 0 and -1 |
+| Vblank-timed single buffer (below) | 98-99% | none |
+
+### Find the blank with a pan pair, then write just after it
+
+**After** (rtgfw `RTG_F_VBLANK`, commit b25c230; Arnold 1.4 `RTGVBL`, on by default for RTG):
+
+    /* the screen is opened two pages tall (SA_Height = 2 * h); page 1 is never meant to be seen */
+    vt_pan_pair();        /* pan to page 1 (spins to the blank), then straight back (about 30 us) */
+    ...                   /* 9 anchors 2 ms apart; steps may be 1-3 periods; period = shortest step */
+    for (;;) {            /* task at the owner's priority +1 */
+        vt_wait_until(next_blank + 50 us);
+        write the staged dirty lines;   /* under a semaphore, 0.1-0.8 ms */
+        load the CLUT if it changed;
+        if (a second since the last anchor) re-anchor at next_blank - 300 us;
+    }
+
+*Source: rtgfw `src/rtgfw.c` (MIT).*
+
+`rtg_present` itself only copies the emulator's dirty lines into a staging frame and signals the task.
+
+**Why it works.** A CPC frame takes 0.1-0.8 ms to write and the display takes 16.7 ms to scan. Writing starts 50 us after the blank, so the copy stays ahead of the scan: each refresh shows a frame that is wholly old or wholly new. The pan pair marks the blank without the hidden page ever showing, because the pan back happens inside the same blank. The period is measured rather than assumed, so the same code follows a 50 Hz HDMI output.
+
+**Evidence.**
+- Bench: write 0.11-0.25 ms; at most 0.37 ms late; anchor error at most 14 us.
+- Arnold, Sonic GX on the Plus, RTG with hard 50% scanlines, 2250 frames: core 8.88 ms (including the write task) against 8.55 ms with direct writes; present 0.25 ms against 0.55 ms; 0 frames over 16 ms.
+- A tester compared the two on the same game and judged the vblank-timed mode the best of the set.
+- At 1080p50 the period measured 19998 us. Sonic GX ran at 49.9 fps with core 9.03 ms and no frame over 16 ms. In 2250 frames the write was at most 0.94 ms late, and all 45 re-anchors were good (error at most 54 us).
+
+**Cost.** One task, one staging frame the size of the picture, and about 0.3 ms a second for the re-anchor. No palette changes within a frame and no per-line flags in this mode. If calibration finds no steady period (WinUAE's `uaegfx` replies to a pan at once), the framework falls back to direct writes and logs it.
+
+**Look up.** rtgfw `bench/panbench.c` (the pan timing parts) and rtgbench `FLIP`. In Arnold: `RTGVBL=0` for direct writes, and the log line `rtgfw: vblank timing: refresh ... us`.
 
 ## Read every mode
 
@@ -174,7 +223,7 @@ Blended in 32-bit is faster than in 16-bit even with twice the bytes: RGB565PC n
 
 **Evidence.** Bench, A1200: 50 Hz pacing standard deviation 4 us (worst 18 us); switching to 60 Hz with a screen open, 24 us (worst 120 us), 0 late frames. The native VBlank still runs under an RTG screen but the RTG screen has none of its own, so "follow the display" is forced to the emulated machine's rate in RTG mode.
 
-A 50 Hz HDMI output (set in the Pi's configuration) would remove the judder; it affects Workbench and everything else, and has not been tried.
+A 50 Hz HDMI output removes the judder. On the test machine the Pi's `config.txt` now uses the Emu68 Imager's 1080p50 entry (`hdmi_group=1`, `hdmi_mode=31`), with `disable_overscan=1`. It affects Workbench and everything else. 60 Hz games then drop one frame in six instead. The vblank-timed writes measured the new 20 ms period by themselves.
 
 ## What a second emulator needs (AmiMSX)
 
