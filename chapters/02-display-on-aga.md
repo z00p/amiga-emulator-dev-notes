@@ -487,6 +487,33 @@ The settings menu (a GadTools window) had to fit a 200-line NTSC screen with not
 
 **Look up.** Commits 053a58b, 2194d0a; `WIDE.md`; switch `WIDE`. Pinball Dreams' logo spans columns 24 to 349 and loses 8 pixels of the left wing in the standard window; WIDE shows it.
 
+### Black pens must not share colour 0 when colour 0 is the border
+
+**Problem.** On a tester's A1200, R-Type's Easter Egg logo screen (a grey border) lost the logo's black outline and the letters' shadows: those pixels came out grey. Copter 271 lost black detail the same way. The reference emulator showed them black.
+
+**Before** (`render5.c`, `Palette_MatchColour`, Arnold-m68k 1.4): the matcher reuses any entry that already holds the pen's exact colour, entry 0 included:
+
+    for (i=0; i<256; i++)
+    {
+            if (CPCPalette[i].Flags & PALETTE_ENTRY_USED)
+            ...   /* same RGB: this pen gets entry i */
+
+**After** (`render5.c`, commit 2646fc1, switch `NO_BLACK0_FIX`):
+
+    #ifndef NO_BLACK0_FIX
+            for (i=1; i<256; i++)      /* entry 0 is never matched to a pen */
+    #else
+            for (i=0; i<256; i++)
+    #endif
+
+*Source: Arnold-m68k 1.5, `arnold/src/cpc/render5.c` (GPL-2.0, derived from Kevin Thacker's Arnold).*
+
+**Why.** Two earlier decisions met. The host paints Amiga colour 0 with the CPC border colour, because colour 0 also fills everything outside the picture (the lesson above). And the core keeps its palette entry 0 black for blanking (commit a865618: after a palette reset a game's first colour took entry 0 and filled the surround). So entry 0 held an exact black, the matcher gave it to every black pen, and on the Amiga those pixels were shown in the border colour. On a black border nobody can see it; on a grey or blue one, black parts of the picture vanish. Black pens now get an entry of their own. The RGB picture does not change, only the palette numbering. The general rule: if the host gives a palette entry a second meaning, keep the emulated machine's pens out of it.
+
+**Evidence.** The headless test host gained `AMIGACOL0=1`, which shows index 0 in the border colour as the Amiga does. With it, the logo frame had 974 pixels in the border colour before the fix and 0 after. The normal headless output (RGB) is unchanged at 57 of 57 checkpoints; with `AMIGACOL0=1` only Copter 271 changed in the test set, and its picture now equals the plain RGB picture. The tester confirmed the logo on the A1200.
+
+**Look up.** Commits 2646fc1 (this fix), a865618 (entry 0 kept black); switch `NO_BLACK0_FIX`; headless `AMIGACOL0=1`.
+
 ## Monitor model: short lines and the horizontal flywheel (Arnold)
 
 *Reading notes.* The CPC's video chip (the CRTC) does not draw a picture; it makes a stream of lines and sync pulses, and the emulator has to decide where a monitor would start a new line. Arnold keeps a small monitor model for that. The two lessons here are about games that change the line length every line.

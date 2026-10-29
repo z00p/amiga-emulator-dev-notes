@@ -200,6 +200,30 @@ Blended in 32-bit is faster than in 16-bit even with twice the bytes: RGB565PC n
 
 **Look up.** rtgfw commits d465b66, 9550c4f, 60d7bf0; Arnold `SCANLINES.md`; switches `SCANLINES=`, `RTGDEPTH=16`, `SCANMODE=<w>x<h>`.
 
+## Host pens over the picture and the dimmed bank
+
+### An on-screen message drawn in pen 255 was black on an RTG screen with scanlines
+
+**Problem.** On a tester's A1200, on the RTG screen with Hard scanlines (the Arnold RTG preset), the fast-forward symbol and the save state messages never appeared, although the log said `osd: >>` every time. On AGA, and on RTG without scanlines, they showed.
+
+**Before** (`amiga_sys.h`, Arnold-m68k 1.4):
+
+    #define SYS_OSD_PEN 255             /* palette entry the host keeps for the label (yellow) */
+
+**After** (`amiga_sys.h`, commit 6c73e97):
+
+    /* 127, not 255: on an 8-bit RTG screen with scanlines, entries 128-255 are the
+     * dimmed copies of 0-127, so 255 showed as entry 127 dimmed */
+    #define SYS_OSD_PEN 127
+
+*Source: Arnold-m68k 1.5, `arnold/src/amiga/amiga_sys.h` (GPL-2.0, derived from Kevin Thacker's Arnold).*
+
+**Why.** With Hard scanlines on an 8-bit CLUT screen the framework owns entries 128 to 255 (see "Hard scanlines: the bank of dimmed colours" above): entry 128 + i is entry i dimmed, and the framework loads those entries itself from 0 to 127. The host's yellow in entry 255 was never loaded; the screen showed the dimmed copy of entry 127, which nothing used, so black on black. Any pen the host draws over the picture (messages, labels, test overlays) must be below 128, and reserved in the emulator's palette so the core never hands it to a game colour (`Render_MarkPaletteEntryForHostUse`). The core compacts game colours below 64 at each frame's end, so a reserved 127 costs nothing. On AGA, and on RTG without scanlines, all 256 entries are the host's, which is why only this one setting showed it.
+
+**Evidence.** WinUAE with uaegfx, 8-bit, Hard 50% scanlines (no 960x540 mode there, so 800x600 with the picture at 2x): a key script held the fast-forward key for 400 frames, and the window grabs show the yellow ">>" at the top left for the 1.2 s it was held, 1178 pixels in full yellow on the picture rows and 1178 in the dimmed yellow on the scanline rows. AGA and RTG without scanlines show it as before. On the A1200, pen 255 had shown nothing; the fixed build is still to be confirmed there.
+
+**Look up.** Commit 6c73e97; `SYS_OSD_PEN`; rtgfw `rtgc_set_scan` and `rtgc_clut_colour` (`rtg_conv.c`); option `SCANLINES=`.
+
 ## Keeping the menu on RTG
 
 ### Open the next screen before closing the old one

@@ -580,3 +580,76 @@ and the fast cell paths take only positive counts.
 **Evidence.** Headless 33 of 33 tests: save to a standard and to an extended image, reload and save again, `.bak` made once, byte compare with the reference emulator (identical except 126 bytes of uninitialised RAM), `FORMAT` of all 40 tracks of drive B by patching and by changing the layout, a high-score write beside a weak sector (only those bytes change), a write-protected file untouched, no change means no write. WinUAE on the PiStorm configuration 7 of 7 (standard, resave through the temp, old and rename path, extended, read-only).
 
 **Look up.** Commits 86888ee, 805df0f, cbb5e01; `DSKWRITE.md`; switches `NO_DSK80`, `DISKWRITE=0`.
+
+## Fast-forward and tape auto-start (Arnold)
+
+*Reading notes.* Two conveniences of Arnold 1.5 for tape games and slow intros. Both live entirely in the host: the emulated machine runs exactly as without them, which is what made them safe to test.
+
+### Fast-forward: no pacing, a picture every 100 ms, sound paused, no catch-up
+
+**Problem.** A tester asked for a key that runs the game fast while it is held (long loads with fast tape off, slow intros, waiting in a game). It must not change the emulation, the sound must stop at once and come back cleanly, and letting go must not cause a burst of fast frames or skipped frames.
+
+**After** (`host_amiga.c`, `Host_Throttle` and the frame-skip hook, Arnold-m68k 1.5):
+
+    if (ffwd_key != ffwd_on) {               /* only here, between two frames */
+        ffwd_on = ffwd_key;
+        if (ffwd_on) { Sys_AudioPause(); Sys_OsdHold(">>"); ... }
+        else         { Sys_OsdRelease(">>"); Sys_PacingRestart(); ... }
+    }
+    if (ffwd_on) fast = 1;
+    ...
+    if (fast) { behind_us = 0; ...; return; }  /* no 50 Hz wait */
+
+    /* frame-skip hook: a frame about every 100 ms of real time */
+    if (ffwd_key) {
+        unsigned long t = Sys_Micros();
+        if (t - ffwd_drawn < FFWD_SHOW_US) return 1;   /* not drawn */
+        ffwd_drawn = t; return 0;
+    }
+
+*Source: Arnold-m68k 1.5, `arnold/src/amiga/host_amiga.c` (GPL-2.0, derived from Kevin Thacker's Arnold).*
+
+**The design, point by point.**
+
+- **Change state only between frames.** The keyboard handler only records the key; the frame loop switches on and off. Nothing changes in the middle of a frame.
+- **Pacing off.** No frame wait, and the "behind" figure the frame skip uses is held at 0, so the normal frame skip does not react.
+- **Draw by real time, not by frame count.** A frame every 100 ms, whatever the speed, so the chunky-to-planar conversion does not eat the gain and the user still sees where the game is. Drawn frames are exact (frame skip never changes a drawn frame), so this is display only.
+- **Sound paused, but every block still made.** Paula stops at once and its queue is emptied. The core still produces each frame's sound block, and each block still goes through the host's DC filter, but none is queued. The sound after release is then the same, to the sample, as in a run without fast-forward.
+- **No catch-up on release.** The pacer counts frames against a 50 Hz schedule. After an unpaced stretch it would see itself hundreds of frames ahead or behind and burst or skip. `Sys_PacingRestart` makes the next frame wait restart the schedule from now. The same restart is now used when fast tape loading ends (it used to report one frame behind).
+- **The symbol is not in the picture.** The ">>" (two solid triangles) is drawn over a copy of the frame on its way to the screen, so screenshots, test snapshots and save states never contain it.
+- **A key that is not a CPC key.** The key left of 1 was a second CPC `^` (the `=` key gives `^` too). It is tested before the key remap, so no key map can take it.
+
+**Evidence.** Headless (the test host's `FFWD=a-b` draws 1 frame in 8 between frames a and b): 19 cartridges and 3 tapes loaded by auto-start, 3000 frames each, 638 snapshots (25 per title inside the fast stretch) identical to the plain run, and the final frames and WAV files byte-identical. WinUAE, AGA and RTG: the key held by a key script for 400 frames gives the same snapshots as the plain run, and window grabs show ">>" at the top left for exactly the time it is held.
+
+**Look up.** `FFWD_SHOW_US`, `Sys_PacingRestart`, `Sys_AudioSkip`, `Sys_OsdHold`; headless `FFWD=`; key script `A:FFWD`.
+
+### Tape auto-start: type the load command at frame ends, like a key script
+
+**Problem.** Every tape game needs a command before it loads: `RUN"` on a CPC 464, `|TAPE` and then `RUN"` on a 664 or 6128 (on the 6128 Plus, f1 for BASIC first), and a key at "Press PLAY then any key". On an Amiga keyboard `|` is Shift and the key right of P, which nobody finds.
+
+**After** (`tapeauto.c`, Arnold-m68k 1.5, option `AUTOTAPE`, on by default):
+
+    s = ta_text(ta_kind); n = ta_len(s); first = ta_first(ta_kind);
+    if (ta_t >= first && ta_t < first + (long)n * TA_STEP) {
+        i = (ta_t - first) / TA_STEP; ph = (ta_t - first) % TA_STEP;
+        key = ta_key(s[i], &shift);
+        if (ph == 0)       { if (shift) setkey(CPC_KEY_SHIFT, 1); setkey(key, 1); }
+        if (ph == TA_HOLD) { setkey(key, 0); if (shift) setkey(CPC_KEY_SHIFT, 0); }
+    }
+    end = first + (long)n * TA_STEP + TA_PLAY_WAIT;
+    if (ta_t == end) setkey(CPC_KEY_SPACE, 1);       /* "Press PLAY then any key" */
+
+*Source: Arnold-m68k 1.5, `arnold/src/amiga/tapeauto.c` (GPL-2.0, derived from Kevin Thacker's Arnold).*
+
+**Why this way.**
+
+- **Keys into the keyboard matrix at frame ends**, the same place the test key scripts act. The emulated machine just sees someone typing: no ROM patch, no memory poke, no firmware trap, so it works with every model's ROM and with the Plus cartridge menu.
+- **Measure the earliest frame, then add a margin.** Power ON is a power cycle, so BASIC's Ready comes at the same frame every time. The test host found that typing works from frame 40 on every model (the Plus menu takes f1 from frame 40, and BASIC takes keys 100 frames after f1). Typing starts at frame 100 (Plus: f1 at 150, typing at 300).
+- **Hold 4 frames, release 4.** The firmware needs a release of at least one keyboard scan, and two for the same key twice.
+- **Only for a tape game:** a tape in the deck and no disk in drive A (a 464 has no drive); on the Plus only with the system cartridge (a game cartridge starts itself); never on the GX4000. Reset does it again only when the tape is at its start.
+- **In the save state.** The auto-start's position (kind and frame) is part of the host data, so a state taken while it types resumes exactly. When it finishes it must clear its state fully: a first version kept the frame count, and four save-load-save round trips were not byte-identical.
+- **Plain C, no OS calls**, so the Amiga host and the test host use the same file.
+
+**Evidence.** The test host with no keys typed: 4 tapes (including one with a custom loader) on the 464, 664, 6128 and Plus, 16 of 16 load to their last block; for each, auto-start at real speed and with fast loading give the same frame and RAM, and the picture 150 frames after loading equals the hand-typed run's. Motor on at frame 192 (464), 240 (664, 6128) and 439 (Plus). Save states: 3 extra cases taken while it types resume exactly. WinUAE: auto-start on the 464 and the Plus loads to the same picture as the test host. A tester confirmed it on the A1200, also together with fast-forward.
+
+**Look up.** `tapeauto.c`, `TapeAuto_GetState`; headless `AUTOTAPE=1`; option `AUTOTAPE=0|1`, prefs `autotape=`.
