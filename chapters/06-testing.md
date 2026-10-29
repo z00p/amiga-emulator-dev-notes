@@ -356,6 +356,48 @@ The harness can grab WinUAE's window back to back while the game runs (no freeze
 
 **Look up.** `tools/vscroll/a1200_run.sh` and `tools/sprites/stats.py` in the development repository; notes `SONIC-SPEED.md`, `PERF50.md`; chapter 08 for how to brief an agent to use it.
 
+## Debug rows on the screen: measuring from a photo
+
+*AmiMSX.* When the emulator takes over the machine (the operating system is stopped during play), there is no network, no file and no log to read back. What there always is: the tester, a phone camera, and the screen. So a debug build draws a few rows of hex numbers over the top of the picture, every frame, and the tester sends a photo. It needs no harness, works on any machine you can borrow, and the numbers belong to exactly what was on screen at that moment.
+
+**Problem.** Space Manbow 2 on the RTG output of the PiStorm A1200 "sounded slower" than on AGA. WinUAE's RTG config runs a JIT 68040 at full speed, so it could not show it. We had to know whether the A1200 was short of time, and where the time went.
+
+**Before:** a guess from the sound, and a video at 25 fps that cannot show a 70% frame rate.
+
+**After** (`AmiMSX_Rtg_v4.asm`, AmiMSX 4.5 development, switch `RTGDBG`): a speed row, counted per window of 50 Amiga vertical blanks and drawn in a 3x5-dot hex font straight into the screen memory:
+
+    RtgDbSpd:                       ; every MSX frame, also on frames drawn elsewhere
+        ADDQ.W  #1,RdMsx            ; MSX frames in this window
+        ...                         ; + frames drawn on RTG / on AGA
+        MOVE.W  FMXVbl,D0           ; vertical blanks since the window began
+        SUB.W   RdV0,D0
+        CMP.W   #50,D0
+        BCS.S   .draw               ; window not over: draw the last result
+        LEA     RdOut,A0            ; window over: latch the counts, clear them
+        MOVE.W  RdMsx,(A0)+
+        ...
+        MOVE.W  RdFlush,(A0)+       ; time spent in section 1
+        MOVE.W  RdRend,(A0)+        ; time spent in section 2
+    .draw:  ...                     ; the latched values as hex glyphs, row 58
+
+*Source: AmiMSX 4.5 development, AmiMSX_Rtg_v4.asm (freeware, used with permission).*
+
+The row reads `0023 0023 0000 0000 0032 2A84 063D`: 35 MSX frames per 50 blanks (70% speed), all 35 drawn on RTG, none on AGA, no spare time in the frame wait, 50 blanks, then the two section times.
+
+**Why it works.** A count per fixed window (50 blanks = 1 s) gives a steady number that a photo can catch; per-frame values flicker too fast to read. Counting the frames by where they were drawn shows at once whether the slow path is even in use. A "spare time" count (loop turns in the frame wait, divided by 256) separates "short of CPU" (0000) from "waiting on something else" (a large value with fewer frames).
+
+**Timing sections.** Read a free-running counter at the start and end of each section and add the difference to a word per window. Our first timer was `FMXVbl * 313 + the beam line from VPOSR/VHPOSR`. It assumed a 313-line PAL frame, and that the blank counter moves on at line 0. Under RTG the native display was not that, and a section that never runs read `F30F` (a sum of negative steps). The big values were still usable for ranking (the section that copies the AGA planes back to MSX video memory took about 7 times the RTG drawing, which settled the design question), but the small ones were nonsense. For a timer that does not care about the display mode, use the CIA-B time-of-day counter, which counts horizontal syncs (`$BFDA00` high, `$BFD900` middle, `$BFD800` low; read the high byte first and the low byte last). Also show the window's own total, so each section can be read as a share of the time.
+
+**Evidence.** On the A1200: the title 0032 frames (full speed), starfield 0032 with spare time, stage 1 walls 0023 with none. Section times: copy-back about 2A80h against about 0635h for the drawing. WinUAE could show none of this.
+
+**Tips.**
+- Put the values in a fixed order, write the legend in the tester's checklist ("the 3rd row: 1st = MSX frames, 0032 = full speed"), and keep a build reference in the menu title so the photo also says which build it was.
+- Keep the rows to the top few lines of the picture and draw them on every frame, also on frames the debug display does not otherwise own.
+- Make it a build switch, so the release binary stays byte-identical apart from the build reference.
+- Ask for one photo early and one later in the same scene: rising time shows up as a falling first number.
+
+**Look up.** AmiMSX `Docs/agent_notes/v45_rtg.md` (29 Oct 2026 entries); switch `RTGDBG`; the speed row commit e1cb289, section timers 2097120.
+
 ## A headless x86 host with per-frame checksums
 
 *Arnold.* The emulator core is plain C, so the same source also builds as a small program for a PC with no window and no sound: the headless host (`arnold/src/headless`). It runs a game for a given number of frames and writes out what it did. This is the cheapest test we have, and most of the work in this book was checked with it first.
