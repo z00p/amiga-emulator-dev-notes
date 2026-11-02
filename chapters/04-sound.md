@@ -306,3 +306,17 @@ and a busy stream outranks any tone for its voice:
 The tick buffers hold the reference's write sequence, identical apart from the frame edge. Of the buffers queued, 1143 of 1288 went by tick in Soldier Blade and 241 of 246 in Parodius. Cost on the heaviest DDA title, 68030/50: 1135 to 1148 vblanks for 600 frames (+1.1%).
 
 **Look up.** Commit eb68d5a; `PSGTickPut`; `tools/pcmseq.py`; notes `docs/agent_notes/pcm.md`, step 3.
+
+### A software mix that measured well and sounded worse
+
+**Problem.** With six channels on four voices, the quietest two are dropped each frame. The obvious answer on a fast machine is to mix all six in software and play the result through Paula.
+
+**Tried.** On the RTG path of a PiStorm A1200, with the OS frozen: all six channels, noise and DDA samples mixed once a frame at 22 kHz, nearest sample from the 32-sample waves, 16-bit inside and 14-bit out on all four voices, with a ring and rate feedback.
+
+**Evidence.** It was cheap: +1.7% of a frame on average across eight titles, +3.3% at worst, against an estimate of +7 to 11%. No underruns in 22 runs. Pitch and level matched a model of the chip. PC renders of the mix sounded, if anything, slightly more detailed.
+
+**Result.** On the real machine, played A/B against the four hardware voices through the same amp, it sounded worse, so it was left out of the build. We did not establish why. Hardware voices play each wave at its own rate and don't resample it; a mix at a fixed rate does, but that is a guess, not a finding.
+
+**Why it's here.** Good figures only say a thing is affordable. The numbers, the model and the PC render all agreed, and none of them was the test that counted. Build the smallest version behind a switch, and put it in front of someone's ears on the real output chain before deciding anything that depends on it.
+
+**Look up.** AmiPCEngine branch `mix`, tag `mix-rtg`, not in any release; notes `docs/agent_notes/mix.md`.
