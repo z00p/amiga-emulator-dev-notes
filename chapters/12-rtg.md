@@ -258,6 +258,94 @@ AmiMSX, a takeover emulator that races the beam, would follow Arnold with a long
 - **Palettes as banks.** MSX has at most 7 palettes of 16 colours a frame (an event applies from the next line), so index = 16 x bank + colour fits 256 entries; with even/odd bank sets (2 x 7 x 16) a new frame's CLUT load never changes colours the shown frame still uses. SCREEN 8 over SCREEN 5 needs 256 + 16 entries and a 16-bit run at the split line; YJK modes need a direct 16-bit line input.
 - **The module form.** A LoadSeg-able library with a register-ABI jump table suits vasm. It is designed but not built.
 
+## A takeover emulator on RTG (AmiPCEngine)
+
+*AmiPCEngine.* The rest of this chapter keeps the OS alive, and the section above lists an OS-alive play loop as the biggest change for a second emulator. There is another route. AmiPCEngine, with a design taken from AmiMSX's RTG build, freezes the OS during play and still shows the game on a Picasso96 screen. The reference emulator here is Mesen 2, and percentages are pixels that differ from it. Commits and `docs/agent_notes/` belong to the AmiPCEngine development repository.
+
+**The shape.** The 16-bit screen is opened and locked once before the takeover, only to read the bitmap's address, row size and real pixel format, and it is unlocked again before play. The lock must not be held across OS calls: that deadlocked the VideoCore now and then (AmiMSX commit e8121f9). In play there are no OS or Picasso96 calls: each frame is composed in fast RAM (16 sprite palettes, full width), and the changed lines are written to the framebuffer at the start of an Amiga vblank. Pacing stays on the Amiga's vblank, there is no flip, and bitplane, sprite and copper DMA are off, so there are no chip RAM writes for display at all.
+
+	LEA	RtgRI,A1
+	MOVEQ	#12,D0
+	MOVE.L	RtgP96,A6
+	JSR	-48(A6)			; p96LockBitMap
+	...
+	MOVE.L	RtgRI,RtgMem		; the framebuffer, kept for play
+	MOVEQ	#0,D0
+	MOVE.W	RtgRI+4,D0
+	MOVE.L	D0,RtgBpr		; bytes a row
+
+*Source: AmiPCEngine 1.1, src/RTG.asm (freeware by Juan Antonio Gómez Gálvez and z00p; used with permission).*
+
+**Evidence** (A1200 PiStorm, 960x540 RGB565PC, frames / vblanks, guards clean):
+
+| Title | AGA | RTG |
+|---|---|---|
+| R-Type | 1500 / 1544 | 1500 / 1500 |
+| Parodius | 2400 / 2569 | 2400 / 2400 |
+| Soldier Blade | 1500 / 1637 | 1500 / 1500 |
+| HuZERO | 1500 / 1556 | 1500 / 1500 |
+| PCE Invaders | 1500 / 1530 | 1500 / 1500 |
+
+The takeover path has a cost on a slower machine with a slower board. On WinUAE's 68030/50 with `uaegfx`, RTG ran at 12% to 35% of full speed against 32% to 93% on AGA. How much of that is WinUAE's graphics card was not separated.
+
+**Look up.** Commit 7a84eb9; switch `NO_RTG`; notes `docs/agent_notes/rtg.md`.
+
+### The frame-end value of a register is not the frame
+
+**Problem.** R-Type showed no sprites on RTG at first, though AGA did. HuZERO's striped logo was one solid colour.
+
+**Before.** A renderer that composes the whole frame at the end reads each register once, so it sees the last value written. R-Type switches the sprite-enable bit at its raster splits, and at the end of the frame the bit was off. The AGA renderer never looked at that bit.
+
+**After** (`src/RTG.asm`, `RtgCRLog`, and for colours commit 0098c1c, switch `NO_RTGPAL`): each write is logged with its line, and the renderer applies it from the next line, as it does scroll writes.
+
+	; RtgCRLog: a write to VDC R5 (IO.asm, any time): the line it was made on and
+	; the new value; it shows from the next line. All registers kept.
+		...
+		MOVE.W	Regs+ScanLine,(A0)
+	.same:	MOVE.W	VDP_Regs+(5*2),2(A0)
+
+For colours, the usual case must stay cheap. The palette at the end of the frame is already right for a game that writes only in the vertical blank, so the log is dropped unchanged:
+
+	CMP.W	RtgPLog,D1		; first write before it?
+	BGT.S	.mid
+	CLR.W	RtgPLN			; all in the blank: the frame-end colours are right
+	BRA.S	.x
+
+If a write falls inside the picture, the renderer undoes the logged writes (last first) to get the colours at the start of the frame, then puts them back line by line, and it draws every line this frame and the next.
+
+*Source: AmiPCEngine 1.1, src/RTG.asm (freeware by Juan Antonio Gómez Gálvez and z00p; used with permission).*
+
+**Why.** Rendering after the frame removes every race with the beam, and it removes the mid-frame state with them. Each register a game can change between lines needs a per-line log in the frame-end renderer. Scroll had one already; the enable bits and colours did not. A hand-written log also needs a rule for two writes on one line: the later replaces the earlier (`NO_RTGFIX`), which kept the log to one entry a line.
+
+**Evidence.** R-Type's sprites on RTG: title, play and attract within 0.9-1.3% of the reference, all from emulation drift. HuZERO's logo striped like the reference's at frames 200 and 300. Games that write colours only in the blank take the old path. The "shows from the next line" rule for colours was not checked line by line against the reference.
+
+**Look up.** Commit 0098c1c; `RtgCRLog`, `RtgPalLog`, `RtgPalStart`, `RtgPalApply`; notes `docs/agent_notes/rtg.md`, `faults.md`, part C.
+
+### Measure before tuning: RTG is busy 13 to 28% of the frame on a PiStorm
+
+**Problem.** The project's policy was to put its effort into RTG speed, and a 68030 RTG run in WinUAE looked poor (above). The question was how much room was left on the real target.
+
+**Before.** A window of debug rows read from a photo: Parodius with 80-93% spare, one title, one scene.
+
+**After.** Run totals from the debug rows in a result file, 8 titles and 2 settings, 16 unattended runs. The method and code are in chapter 06, "[Add the windows up: run totals in a result file](06-testing.md#add-the-windows-up-run-totals-in-a-result-file)". A1200 PiStorm, 1080p50 HDMI, 960x540:
+
+| Title | Busy, scanlines off | Busy, Blended strong |
+|---|---|---|
+| Parasol Stars | 12.8% | 13.3% |
+| Parodius | 12.8% | 13.8% |
+| R-Type | 14.2% | 14.9% |
+| Soldier Blade | 18.2% | 19.4% |
+| Bonk's Revenge | 20.6% | 22.1% |
+| Tongueman's Logic | 20.8% | 22.9% |
+| Street Fighter II' | 23.1% | 23.5% |
+| HuZERO | 24.9% | 28.0% |
+
+**Why.** In the worst title the split is CPU 10%, compose 13%, copy to the board 1.6% (5.0% with Blended strong). The copy, the part the first RTG lessons above were about, is the smallest share. Even the tightest 50-vblank window of the sweep still waits 8666 of 15650 lines.
+
+**Evidence.** No late frame, and frames = vblanks in all 16 runs. So RTG speed on a PiStorm is not a limit: on this machine more tuning would not add a frame. A 68030 is the limit. The sweep turned a policy into a figure before any tuning job started.
+
+**Look up.** Commit a44eae7; STATUS, "RTG speed sweep on the A1200".
+
 ## Pitfalls from this chapter
 
 See the RTG items in [chapter 09](09-pitfalls.md#rtg-output).

@@ -217,3 +217,92 @@ Lilly's Saga already ran below full speed on a 68020 A1200 (42 to 50%) and 68030
 
 **Look up.** `AmiMSX_FM_v4.asm` (`FMXInit`, `FMXFrame`, `FMXSetN`, `FMXAud`); `Docs/sound_fm_moonsound.md` (options and measurements); `tools/fm_synth.py`, `tools/fmx_check.py` (replays logged register writes through the model), `tools/fm_compare.py`; build switch `FMXREC` (logs every register write and output byte).
 
+## Six channels on four Paula voices (AmiPCEngine)
+
+*AmiPCEngine.* The PC Engine's sound chip has six channels. Each plays a 32-sample wave of the game's own, channels 5 and 6 can play noise, and any channel can be driven sample by sample (DDA), which is how games play voices and drums. The design here does almost nothing per sample: once per Amiga vblank each Paula voice gets its pointer, length, period and volume, and the game's waves play from chip RAM. Paula voices are hard left or right. Commits and `docs/agent_notes/` in this section belong to the AmiPCEngine development repository.
+
+Nothing here could be heard on the PC: WinUAE's WAV output is a GUI feature, and the reference emulator's scripting has no WAV recording. So the proof is in logs and renders, and the verdict on sound still comes from a tester's ears.
+
+### Pick the four loudest channels each vblank instead of mixing
+
+**Problem.** The original `PSG.asm` was a stub: four voices for channels 0-3, one fixed square wave, frequency and volume only. Games use all six channels.
+
+**After** (`src/PSG.asm`, `PSGAllocate`, commit 378a9f9, switch `NO_PSG6`): score each channel by its Paula volume, and give a voice's current owner a bonus, so that near-equal channels do not swap every frame.
+
+	.score:	BSR	PSGChScore
+		MOVE.W	D1,(PSGScore.L,D6.W*2)
+		MOVE.B	D2,(PSGPan.L,D6.W)
+		...
+		MOVEQ	#3,D0			; voice owners get the bonus
+	.bonus:	MOVEQ	#0,D1
+		MOVE.B	(PSGVoiceOwner.L,D0.W),D1
+		BMI.S	.nob
+		TST.W	(PSGScore.L,D1.W*2)
+		BEQ.S	.nob
+		ADDQ.W	#6,(PSGScore.L,D1.W*2)
+	.nob:	DBF	D0,.bonus
+
+*Source: AmiPCEngine 1.1, src/PSG.asm (freeware by Juan Antonio Gómez Gálvez and z00p; used with permission).*
+
+**Why.** Mixing two channels into one voice is per-sample work on the 68k (about 300 samples x 2 voices a frame), with a buffer locked to real time. It adds aliasing and latency to every channel. Selection is about 1500 cycles a vblank on a 68030 and keeps each played channel at its exact pitch from its own 32-byte loop, and what gets dropped is the games' quietest channels. A channel that gains a voice takes a free one on its side when its balance leans one way. Loops are at most about a frame long, so a voice changes channel within a frame without restarting DMA.
+
+**Evidence.** R-Type (Run at 600, 1500 frames), by a log with one line per frame from the emulator and the same line from a script on the reference emulator: all six channels' registers and wave checksums equal for frames 601-1250 at a steady lag, and a checker that recomputes each voice from the registers passes 1499 of 1499 frames. Tone pitch against the registers: median error 0.09%. Six channels were playable in 425 of the 1500 frames, and voices changed owner only 23 times. Cost: within the run-to-run spread on the 68030 config, so below about 2%.
+
+**The limit.** Bonk's Revenge plays 5 or 6 channels, and its chord (amplitude 21-25) outranks its bass (20), so the bass mostly drops out. A tester called the sound "off". A switch that lifts low tones in the score exists (`NO_PSGBASS=0`, off by default). The log can show who gets a voice, not which sounds better, so that is left to ears.
+
+**Look up.** Commit 378a9f9; `tools/mesen_psg.lua`, `psgcmp.py`, `psglag.py`, `psgcheck.py`; test switch `PSGLog`; notes `docs/agent_notes/psg.md`.
+
+### Drums 100 ms late: a voice that was never given a period
+
+**Problem.** A tester on the A1200: sound good apart from the sampled parts, and Soldier Blade's drums "off". Up to then samples had only been checked by counting writes against the reference.
+
+**Before** (`src/PSG.asm`, `InitPSG`): pointer, length and volume are set; the period is left as it was.
+
+**After** (commit 3ddc3f9, switch `NO_DDAQUEUE`):
+
+	MOVE.W	#124,$A6(A6)	; period: the 2-byte silent loop ends at once (left unset, WinUAE took 47 frames)
+	MOVE.W	#124,$B6(A6)
+	MOVE.W	#124,$C6(A6)
+	MOVE.W	#124,$D6(A6)
+
+and a busy stream outranks any tone for its voice:
+
+	BSR	PSGDdaBusy
+	BEQ.S	.nobusy
+	MOVEQ	#100,D1			; a DDA stream with samples to play: above any tone
+
+*Source: AmiPCEngine 1.1, src/PSG.asm (freeware by Juan Antonio Gómez Gálvez and z00p; used with permission).*
+
+**Why.** A dump of every queued and played buffer showed the chain. Voice 0 had never played, so the first buffer waited 47 frames in WinUAE for the old loop to end, 42 frames were dropped with the queue full, and the queue then stayed 4 to 6 deep. Each drum chunk ended with the game turning the channel into a tone. The voice was stopped at once with 3 buffers still queued, and those stale buffers played first at the next chunk. So the end of each drum pattern was replayed at the start of the next, about 100 ms behind the music. The fix sets the period at start-up, lets a stream play out its queue, keeps only the newest 2 buffers at a start, carries the volume with each buffer, and drops the oldest when 4 or more wait.
+
+**The listening loop.** To hear this without a WAV from the reference, a script logs every sound write there with its master clock, and a Python model renders that log by zero-order hold. A test switch (`DdaDump`) writes every buffer event from our side, and the model replays them through a simple Paula at their periods. Both come out as WAV files, also as a stereo file with the reference on the left and ours on the right.
+
+**Evidence.** Soldier Blade: latency from buffer queued to buffer played 5-7 frames (up to 12 and 49) down to 2-3 frames, no dropped frames, first start 3 lines instead of 47 frames. Against the reference in 0.25 s windows: delay 120 ms to 52 ms, correlation median 0.52 to 0.80, best windows 0.99. A tester on the A1200 then called the drums right.
+
+**Look up.** Commit 3ddc3f9; test switches `DdaDump`, `DdaStat` (a health line in the result file); `tools/mesen_dda.lua`, `pcmcmp.py`, `pcmwin.py`; notes `docs/agent_notes/pcm.md`.
+
+### Samples written by a timer belong on the timer's grid, not the line grid
+
+**Problem.** Sampled sound was noisy at 1-3 kHz. Parodius and Soldier Blade write one sample per timer interrupt, every 4.5 and 2.25 lines, but the capture held one sample per line. Our timer interrupt is taken at a line end, so the spacing came out as 4 and 5 lines, or 2, 2, 2 and 3, which adds a pattern tone (1748 Hz in Soldier Blade).
+
+**After** (`src/PSG.asm`, commit eb68d5a, switch `NO_DDATICK`): each sample is filed by timer tick as well as by line. A frame is played from the tick buffer if no tick had two writes and at least 7/8 of the ticks have one, at a period worked out from the timer:
+
+	MOVE.W	#610,PSGTkPer		; PAL screen: 313 x 227.5 / 116.9 ticks = 609.3
+	...
+	MOVE.W	#513,PSGTkPer		; 512 per tick = a 263-line frame per 116.9 ticks; 0.2% long
+
+*Source: AmiPCEngine 1.1, src/PSG.asm (freeware by Juan Antonio Gómez Gálvez and z00p; used with permission).*
+
+**Why.** The written values were already right. The error was when they played, and a simulation of only the line grid on the reference's own writes gave the same figures, which proved it. The period is 0.2% long on purpose, so the queue fills rather than runs dry; with 3 or more buffers waiting, 2 samples are left off. Streams that are not timer-driven (Moto Roader II's bursts) stay on the line grid.
+
+**Evidence.** Parodius "1 PLAYER" against the reference, signal-to-noise ratio in dB:
+
+| capture | under 1 kHz | 1-3 kHz | 3-8 kHz | overall |
+|---|---|---|---|---|
+| by line | 35.3 | 10.5 | 6.8 | 22.4 |
+| by tick | 37.5 | 18.8 | 10.9 | 26.6 |
+| model: the reference's writes on a line grid | 34.1 | 10.1 | 5.8 | 21.9 |
+
+The tick buffers hold the reference's write sequence, identical apart from the frame edge. Of the buffers queued, 1143 of 1288 went by tick in Soldier Blade and 241 of 246 in Parodius. Cost on the heaviest DDA title, 68030/50: 1135 to 1148 vblanks for 600 frames (+1.1%).
+
+**Look up.** Commit eb68d5a; `PSGTickPut`; `tools/pcmseq.py`; notes `docs/agent_notes/pcm.md`, step 3.

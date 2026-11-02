@@ -566,3 +566,103 @@ The settings menu (a GadTools window) had to fit a 200-line NTSC screen with not
 **Evidence.** Line-to-line shift of the logo, measured per row pair: before, plus and minus 12 pixels alternating; after, 0 or plus and minus 2 pixels, the same ripple as the reference emulator (plus and minus 2). The position is the mean of the two old line sets. Same regression results as above (150 same; the five whole-run checksums identical). Cost: a few integer operations per line, nothing per pixel.
 
 **Look up.** Commit 9916292; `LOGO21.md`; `CRTC_HFlyLine`, `CRTC_HFlyApply`, `Render_HShiftLine`.
+
+## Colour 0 and sprite priority from a tile machine (AmiPCEngine)
+
+*AmiPCEngine.* The PC Engine draws a background (BG) of 8x8 tiles, each tile with one of 16 palettes, and up to 64 sprites. Its colour chip (the VCE) holds 512 colours. The AGA renderer keeps the BG in 8 bitplanes: planes 0-3 hold the pixel and planes 4-7 hold the tile's palette, so a pixel shows as index 16 x palette + pixel. Sprites are drawn into a fast-RAM buffer and shown through four strips of attached hardware sprites, with one palette for all of them. The RTG display has neither limit (chapter 12). Commits and `docs/agent_notes/` in this section belong to the AmiPCEngine development repository.
+
+Both lessons here started as questions of cost. Neither fix needed a menu setting, and neither moved the A1200's AGA figures. The reference emulator in the AmiPCEngine sections is Mesen 2.
+
+### A BG pixel of 0 made truly index 0: one copper MOVE a line follows the game's backdrop
+
+**Problem.** HuZERO's road and Tongueman's Logic's gradient are not tiles. The games leave BG pixels at value 0 and rewrite VCE entry 0 on every line: 173 writes a frame in HuZERO (lines 51-223), 223 in Tongueman's Logic (lines 1-223), by a log in the reference emulator. AGA loaded the palette once a frame, so the road came out in one plain colour.
+
+**Why it looked too dear.** The palette was part of every tile's planes, so a pixel of value 0 was index 16 x palette, not index 0. To make all those entries show colour 0, the renderer copied it to 16 slots across 8 banks. One backdrop change was then 16 colour MOVEs and 8 BPLCON3 bank MOVEs. A copper MOVE takes 4 colour clocks and the horizontal blank at this window is about 67, so about 11 to 16 MOVEs fit, less on a line that already has a scroll entry (a WAIT and 18 MOVEs). The options on paper, for HuZERO's 173 lines:
+
+| Option | MOVEs a line | Extra copper list a frame | Result |
+|---|---|---|---|
+| All 16 palettes' slot 0 | 24 | 16.6 KB | does not fit the blank: the colour changes inside the picture, a seam on every line |
+| Only the palettes in use | about 18 | about 12 KB | the same seam, and wrong the moment a palette appears mid-frame |
+| A pixel of 0 is truly index 0 | 1 | about 1.4 KB | fits, exact colour, no seam |
+
+**Before** (`src/VDP_AGA.asm`, `PrintGFX`, AmiPCEngine 1.0): the palette planes are the same constant on all 8 rows of a tile, set or not:
+
+	add.l	a3,a4
+	ADD.L	A3,A1
+	move.b	d7,(a4)
+	MOVE.B	D7,(A1)
+	ROR.L	#8,D7
+	...
+
+**After** (commit 3f172b9, switch `NO_BGMASK`): the palette planes only where the row has a pixel. D4 replaces D7 in the writes above.
+
+	; A pixel of value 0 is index 0 in every palette: the palette planes (D4) only
+	; where this row has a pixel.
+	MOVE.W	(A2),D4
+	OR.W	16(A2),D4
+	MOVE.B	D4,D5
+	LSR.W	#8,D4
+	OR.B	D4,D5
+	...				; that byte in all four bytes of D4
+	AND.L	D7,D4
+
+Then the raster effect itself (switch `NO_BGLINE`). A write to VCE entry 0 goes into a table per frame, and the copper list gets one MOVE for each entry, last on a line with a scroll entry, otherwise after its own WAIT right of the window:
+
+	.w:	move.l	#$FFE1FFFE,(a5)+	; WAIT at H $E0, right of the window
+		move.b	d2,-4(a5)		; on this entry's line
+		move.w	#$0180,(a5)+		; one MOVE to COLOR00
+		move.w	2(a4),(a5)+
+
+and the borders stay black when a frame is a raster effect, not a fade:
+
+	moveq	#$0010,d1		; a raster effect on colour 0: black borders, not stripes
+	move.w	#$1040,d0
+	suba.l	BgLogNext,a4
+	cmp.w	#4+(BGBORDER*4),a4
+	bcs.s	.bord
+	moveq	#$0011,d1		; ECSENA, which BRDRBLNK needs
+	move.w	#$1060,d0		; BRDRBLNK
+	.bord:	move.w	d0,BpCon3+2
+		move.w	d1,CopTopWait+6
+
+*Source: AmiPCEngine 1.1, src/VDP_AGA.asm and src/Main.asm (freeware by Juan Antonio Gómez Gálvez and z00p; used with permission).*
+
+**Why.** Once every palette shares index 0, one write to COLOR00 reaches every BG pixel of value 0, and the slot copies can go, which pays part of the mask's cost back. The change lands in the left border of the next line, before the window opens, so there is no seam on the picture. A write on line N shows from line N+1, the same rule as a scroll write. The list starts with the colour the frame began with.
+
+COLOR00 also fills the border, the trap of [the Arnold lesson above](#black-pens-must-not-share-colour-0-when-colour-0-is-the-border). Here it would turn the sides of the screen into stripes. BPLCON3's BRDRBLNK bit blanks the border to black, and it needs ECSENA in BPLCON0 (commit d080aa9). It is only set in a frame with 16 or more entries (`BGBORDER`), so a fade that writes a few entries keeps its border. Sprites whose palette sits in bank 0 must not take colour 0, so `PonePaleta_AGA` saves COLOR00 around that copy.
+
+**Evidence.** A1200 (PiStorm), vblanks for the same frames, without and with the three switches of this section: Parodius 2628 and 2628, Soldier Blade 1634 and 1634, Parasol Stars in play 2489 and 2489, HuZERO in play 2695 and 2694, Street Fighter II' 2422 and 2422, memory guards clean. WinUAE AGA, all three on against all off, window grab at frame 900: 0 pixels differ on Soldier Blade, Bonk's Revenge, Parodius, Magical Chase and Ninja Spirit. HuZERO in play at frame 1600: band heights 5, 16, 18, 21 and 25 lines, as in the reference emulator. Photos of the A1200: the road bands, black borders and Tongueman's gradient are right. With all three switches = 1 the binary is the previous one byte for byte. The extra mask cost per tile row was estimated, not measured alone.
+
+**Left as before.** Only entry 0 is followed. HuZERO's M logo stripes are per-line writes to another colour, so the logo stays plain white on AGA. Magical Chase (one BG entry on lines 96-144) and Nantettatte Engine are not followed either.
+
+**Look up.** Commits 3f172b9, d080aa9; switches `NO_BGMASK`, `NO_BGLINE`; `BgColLog`, `CopColFlush`, `SetScrollCol`; notes `docs/agent_notes/night.md`, parts "2c" and "AGA backdrop built".
+
+### Sprites behind the BG for a whole frame by BPLCON2, and why a mixed frame cannot use it
+
+**Problem.** On AGA, Parasol Stars' title clouds were drawn over the letters. Each PC Engine sprite has a priority bit. The RTG renderer honours it pixel by pixel, but `PrintSprites_AGA` draws into a sprite buffer and nothing read the bit. A per-sprite mask from VRAM was estimated at about 3000 cycles for a 16x16 sprite on a 68030/50 (60 microseconds): 23 sprites, Soldier Blade's count, would be 1.4 ms, 8% of a frame. That was too dear for the low end.
+
+**What the games do.** The reference emulator's sprite table at frame 1800, sprites flagged behind of those visible: ninjabutai 62 of 62, Populous 24 of 28, Blazing Lazers 29 of 46, Soldier Blade 23 of 33, Devil's Crush 6 of 50, HuZERO 4 of 40. Parasol's title at frame 520 has 7 visible sprites, all behind. So one common case is cheap: a frame where every visible sprite asks for the same thing.
+
+**Before** (`src/Main.asm`, AmiPCEngine 1.0): a constant in the copper list.
+
+	DC.W	$0104,$007F
+
+**After** (`src/VDP_AGA.asm`, `PonePaleta_AGA`, commit 3f172b9, switch `NO_SPRBACK`). D7 collects, over the 64 sprites, bit 0 = one is in the window, bit 1 = one is over the BG:
+
+	; Hardware sprites have one priority for the frame, so behind the BG only when
+	; every visible sprite asks for it (title screens); a mixed frame stays over it.
+		move.w	#$007F,D1
+		cmp.b	#1,D7
+		bne.s	.prio
+		move.w	#$0040,D1	; PF2P 0: the BG over all sprites
+	.prio:	move.w	D1,CopBplcon2+2
+
+*Source: AmiPCEngine 1.1, src/Main.asm, src/VDP_AGA.asm (freeware by Juan Antonio Gómez Gálvez and z00p; used with permission).*
+
+**Why.** A sprite behind the playfield shows only through pixels of index 0. That is why this step needed the lesson above first: before `NO_BGMASK`, a BG pixel of value 0 was not index 0, so it would have hidden the sprite too.
+
+**Where it fails.** Tongueman's Logic's title transition, about frame 1380: 40 visible sprites, 36 behind the BG (the scenery, 38912 pixels of sprite area) and 4 in front (PUSH RUN, 2048 pixels). A mixed frame stays in front, so the scenery covers the BG's yellow triangle and panel. A test build forced to `$0040` had the right layout but lost PUSH RUN. A rule by area was rejected: a small player sprite among big sprites flagged behind would vanish. The real fix is a BG mask per sprite. The BG planes are in chip RAM, so that needs a mask table per tile in fast RAM. The project puts its effort into RTG, where the bit already works, so this stays a known AGA limit.
+
+**Evidence.** Parasol Stars' clouds are behind the letters in WinUAE, as in the reference emulator, and in photos of the A1200, and its enemy sprites still show in play. Speed: the figures above. Tongueman's Logic on AGA on the A1200 runs 2400 frames in 2605 vblanks (0.92).
+
+**Look up.** Commit 3f172b9; switch `NO_SPRBACK`; notes `docs/agent_notes/night.md`, part 2b item 5 and the last section.

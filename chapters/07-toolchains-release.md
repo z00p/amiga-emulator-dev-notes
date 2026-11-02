@@ -89,6 +89,27 @@ Every debug aid is chosen on the vasm command line (`-DTRACE=1`, `-DPERF=1`, `-D
 
 **Look up.** Commits cac36a3, 0872b43; the `IFD` blocks around `TRACE`, `PERF`, `STATEDUMP`, `CORRCHK`, `HANGCHK`, `EXCCHK`; `Docs/CHANGES_4.x.md`, "Debug builds".
 
+### INCBIN into a BSS section gives zeros, silently
+
+**Problem.** The first boot of AmiPCEngine with a test ROM built in was black. It was not a crash: a per-instruction serial trace showed the first opcode at `$0000`, and the emulated ROM was all zeros.
+
+**Before** (`src/Main.asm`, the embedded test build, from the original sources): the ROM's label sat in a BSS section.
+
+	SECTION	Tablas,BSS
+	...
+	GameCart:
+		IFD	EMBED
+		INCLUDE	"embed.i"	; written by build_embed.sh: INCBIN of the test ROM
+		ENDC
+
+**After** (AmiPCEngine commit 1d703ca):
+
+	SECTION	Juego,DATA	; the ROM needs real data: GameCart was in Tablas,BSS
+
+*Source: AmiPCEngine 1.1, src/Main.asm (freeware by Juan Antonio Gómez Gálvez and z00p; used with permission).*
+
+**Why.** A BSS section has a size and no contents in the executable, so the file's data never reaches the program. **Evidence.** With the ROM in a DATA section the title screen renders correctly. **Look up.** AmiPCEngine commit 1d703ca.
+
 ## amiga-gcc
 
 *Arnold.* Arnold is written in C and built with gcc 6.5 from the amiga-gcc toolchain, running under a Linux environment (WSL) on the PC. The 68k assembler tools of the AmiMSX chapters are not used.
