@@ -248,7 +248,7 @@ Nothing here could be heard on the PC: WinUAE's WAV output is a GUI feature, and
 
 **Evidence.** R-Type (Run at 600, 1500 frames), by a log with one line per frame from the emulator and the same line from a script on the reference emulator: all six channels' registers and wave checksums equal for frames 601-1250 at a steady lag, and a checker that recomputes each voice from the registers passes 1499 of 1499 frames. Tone pitch against the registers: median error 0.09%. Six channels were playable in 425 of the 1500 frames, and voices changed owner only 23 times. Cost: within the run-to-run spread on the 68030 config, so below about 2%.
 
-**The limit.** Bonk's Revenge plays 5 or 6 channels, and its chord (amplitude 21-25) outranks its bass (20), so the bass mostly drops out. A tester called the sound "off". A switch that lifts low tones in the score exists (`NO_PSGBASS=0`, off by default). The log can show who gets a voice, not which sounds better, so that is left to ears.
+**The limit.** Bonk's Revenge plays 5 or 6 channels, and its chord (amplitude 21-25) outranks its bass (20), so the bass mostly drops out. A tester called the sound "off". A switch that lifts low tones in the score exists (`NO_PSGBASS=0`, off by default). The log can show who gets a voice, not which sounds better, so that is left to ears. Tried by ear on the real machine, it was liked less than the default, so it stays off.
 
 **Look up.** Commit 378a9f9; `tools/mesen_psg.lua`, `psgcmp.py`, `psglag.py`, `psgcheck.py`; test switch `PSGLog`; notes `docs/agent_notes/psg.md`.
 
