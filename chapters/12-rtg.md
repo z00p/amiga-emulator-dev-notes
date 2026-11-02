@@ -340,7 +340,7 @@ If a write falls inside the picture, the renderer undoes the logged writes (last
 | Street Fighter II' | 23.1% | 23.5% |
 | HuZERO | 24.9% | 28.0% |
 
-**Why.** In the worst title the split is CPU 10%, compose 13%, copy to the board 1.6% (5.0% with Blended strong). The copy, the part the first RTG lessons above were about, is the smallest share. Even the tightest 50-vblank window of the sweep still waits 8666 of 15650 lines.
+**Why.** In the worst title the split is CPU 10%, compose 13%, copy to the board 1.6% (5.0% with Blended strong). The copy, the part the first RTG lessons above were about, is the smallest share. Even the tightest 50-vblank window of the sweep still waits 8666 of about 13180 lines.
 
 **Evidence.** No late frame, and frames = vblanks in all 16 runs. So RTG speed on a PiStorm is not a limit: on this machine more tuning would not add a frame. A 68030 is the limit. The sweep turned a policy into a figure before any tuning job started.
 
