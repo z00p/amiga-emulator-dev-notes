@@ -28,6 +28,8 @@ Two consequences for anyone porting an emulator:
 
 What carries over to other projects: on the fast machines the frame's work is short, and the time goes in *when* it is done, not in doing it (chapter 05, controller lag). On the BigMig the drawing still crosses the frame start, which is why the double buffer exists (chapter 02). Presets per machine (chapter 07) keep the 68030 away from features it cannot afford, such as the software sound mix (chapter 04), the double buffer and 60 Hz from the VDP.
 
+*AmiPCEngine.* The third project measured on the same A1200 PiStorm, and its figures do not transfer either. AmiPCEngine is 68k assembly with the operating system frozen in play. On the PiStorm the CPU was never its limit: speed work that gained 75% on WinUAE's 68030/50 config changed nothing on the A1200, where the frames lost on AGA were the renderer's chip RAM writes, and the RTG output is busy 13 to 28% of the frame ([chapter 10](10-performance-emu68.md#what-a-speed-up-buys-depends-on-the-machine-amipcengine), [chapter 12](12-rtg.md#measure-before-tuning-rtg-is-busy-13-to-28-of-the-frame-on-a-pistorm)). Its 68030 figures come from WinUAE only. It has none from a real 68030/50 or a BigMig either.
+
 ## Chip RAM bandwidth and the CPU
 
 **Problem.** Sonic GX (an Amstrad Plus game that scrolls the whole screen) ran at 29.9 frames a second on the PiStorm A1200 with frame skip, and at 41.2 without it (too slow, 108% of the frame budget). A first guess was that the blitter should do the work, since it copies in the background.
