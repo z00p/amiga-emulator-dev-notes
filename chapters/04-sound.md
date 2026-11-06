@@ -361,3 +361,66 @@ AmiMSX 4.7 can play the PSG in software and mix it with the FM synthesis into on
 **Evidence.** The player's report of the broken sound after a mid-game switch. The fix removes the mid-game switch rather than converting live state; the player's retest was still to come when this was written.
 
 **Look up.** Commits f915fb2 (the mix), bbeb7ce (the latch); `tools/psg_synth.py`, `tools/psx_check.py`; option `mix` in key scripts.
+
+## HDMI sound through AHI, and one tone for both outputs (Arnold)
+
+*Arnold.* On the PiStorm, Emu68 has an AHI driver that plays sound over the Pi's HDMI output. Arnold 1.6 added it as a second sound path on the RTG screen, next to Paula. Arnold uses the driver only through AHI, as any program would, so its own code needs no driver-specific part beyond a mode ID.
+
+### Ask for the driver's low-latency mode, and queue whole frames
+
+**Problem.** In the driver's plain mode, a click test wandered by about 85 ms against the picture.
+
+**Before.** The driver's plain mode.
+
+**After** (`amiga_audio.c`, Arnold 1.6). The mode is fixed at the driver's 16-bit low-latency mode. The core's frame block (444 samples) goes into a ring of 8 slots in fast RAM, played as one dynamic sound. A sound hook queues the next slot each time one starts, as Paula latches its next pointer:
+
+    /* AHI back end: the frame's block in 16 bits, after the same DC filter as Paula's, in a
+     * ring of slots in fast RAM played as one dynamic sound. SoundFunc runs when a slot
+     * starts and queues the next, as Paula latches its pointer: no block ready, the slot
+     * repeats. AHI's clock isn't the frame's, so the rate moves 0.2% to hold the queue. */
+    #define AHI_HDMI_MODE 0x001f0012
+    #define AHI_SLOTS 8
+    #define AHI_START 2                   /* blocks queued before the sound starts */
+    #define AHI_QMAX  4
+    ...
+    ahi_ctrl = AHI_AllocAudio(AHIA_AudioID, mode, AHIA_MixFreq, 48000, AHIA_Channels, 1, AHIA_Sounds, 1, ...
+
+*Source: Arnold-m68k 1.7, `arnold/src/amiga/amiga_audio.c` (GPL-2.0).*
+
+**Why.** The default mode mixes 96 ms at a time, so a program that wants the sound in step with the picture would have to keep about 5 frames queued, and the delay then drifts. The low-latency mode takes one frame at a time. A queue of whole frames, in the same shape as the Paula path, means the emulator's sound code is the same for both outputs up to the last step. If the frames are locked to the HDMI refresh ([chapter 12](12-rtg.md#with-hdmi-sound-time-the-frames-to-the-hdmi-refresh)), the rate is set to exactly one block per frame, and the queue stays at 1 to 2 blocks.
+
+**Evidence.** Tester: no buzz, and the sound in step with the action, locked and unlocked. A film test of the whole chain (pad, A1200, hub, TV) had Paula by cable 94 ms before the picture, and HDMI sound through the TV 28 ms after it. Of those figures, about 10 ms was Arnold's own queue and 30 to 50 ms the driver's ring; the rest was the hub, the TV and a Bluetooth link to the amplifier. Speed cost on the A1200: none measurable.
+
+**Look up.** `AHI_HDMI_MODE`, `Sys_AudioAhi`, `Sys_AudioLock`; `SetEnv ArnoldAHI <mode id in hex>` tries another mode; notes `Docs/agent_notes/hdmiahi.md`.
+
+### Take the A1200's own filter out, then apply one tone to both outputs
+
+**Problem.** The tester found raw 16-bit sound over HDMI a little harsh. On Paula the tone was not the program's to choose: the A1200's low-pass filter follows the power LED, so it depended on the machine's state.
+
+**Before** (Arnold 1.6). Paula played through whatever filter state the machine was in. HDMI played the core's output as made.
+
+**After** (Arnold 1.7, Options > Sound tone, `TONE=BRIGHT|SOFT|WARM`, preference `tone=`). One low-pass filter runs in software before either output: Bright (none), Soft (6 dB per octave at 4.5 kHz, about the A500's fixed filter; the default) or Warm (12 dB per octave at 3.3 kHz, about the A1200's LED filter). While Paula plays, the A1200's filter is switched off, and it is put back as it was when the sound stops:
+
+    static int led_saved = -1;            /* CIA-A PRA bit 1 (0: LED bright, filter on) as it was; -1: not switched */
+
+    static void led_filter_off(void)
+    {
+        Disable();
+        if (led_saved < 0) { led_saved = ciaa.ciapra & CIAF_LED; ciaa.ciapra |= CIAF_LED; }
+        Enable();
+    }
+
+    static void led_filter_back(void)
+    {
+        Disable();
+        if (led_saved >= 0) { if (led_saved) ciaa.ciapra |= CIAF_LED; else ciaa.ciapra &= ~CIAF_LED; led_saved = -1; }
+        Enable();
+    }
+
+*Source: Arnold-m68k 1.7, `arnold/src/amiga/amiga_audio.c` (GPL-2.0).*
+
+**Why.** A filter the user cannot see makes two outputs sound different and makes A/B listening meaningless. Turning it off and doing the filtering in software gives the same sound on both outputs, and the choice becomes a menu item. The filter is a bilinear transform at the core's 22168 Hz rate, so it costs a few multiplies per sample. Put the LED bit back on every exit path, including the menu, or the user's Workbench sound changes after the emulator quits.
+
+**Evidence.** The settings copy the Amiga's own filters; they were not measured against a real CPC or GX4000, whose output stage is still to be looked up. Bright on Paula is the 1.6 conversion, unchanged.
+
+**Look up.** `Sys_AudioTone`, `audio_tone`, `led_filter_off`, `led_filter_back`; notes `Docs/agent_notes/release-1.7.md`.

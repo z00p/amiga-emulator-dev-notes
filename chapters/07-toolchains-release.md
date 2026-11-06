@@ -149,9 +149,14 @@ That test build was assembled by calling vasm directly, for a quick set of varia
 
 *Arnold.* Arnold is written in C and built with gcc 6.5 from the amiga-gcc toolchain, running under a Linux environment (WSL) on the PC. The 68k assembler tools of the AmiMSX chapters are not used.
 
-### Five builds from one source, and a build that is the same except for its time stamp
+### Two builds from one source, and a build that is the same except for its time stamp
 
-Arnold ships five binaries: `Arnold` (68040, `-O2`), `Arnold-040-Max`, `Arnold-060`, `Arnold-060-Max` and `Arnold-030`. All come from one source tree through one script, built with the same profile (chapter 10). Things worth knowing:
+Arnold 1.0 to 1.6 shipped five binaries: `Arnold` (68040, `-O2`), `Arnold-040-Max`, `Arnold-060`, `Arnold-060-Max` and `Arnold-030`. Since 1.7 there are two: `Arnold`, for the PiStorm (Emu68 presents a 68040, so this is the PiStorm build, not one for real 68040 machines), and `Arnold-060`, for BigMig. Both come from one source tree through one script, built with the same profile (chapter 10). Why the other three went:
+
+- **The `-Max` builds (`-O3`) bought too little for what they cost.** The last head-to-head on the A1200 was 49.6 against 49.3 fps, before profile-guided builds, and no preset icon used them. They also broke save states in 1.5: states would not load in the `-Max` builds only. A bisect by file found that building the save-state file at `-O2` fixed it, and 1.6 shipped that, but the cause was never found. Every extra build is another binary to test after each change.
+- **`Arnold-030` could not reach full speed.** A 68030 machine is too slow for a C emulator of a CPC Plus. A build that cannot run its target at full speed is better dropped than shipped.
+
+Things worth knowing:
 
 - **Compare builds by content, not by hash.** Two builds of the same source differ in the `__TIME__` string and the `$VER` date, nothing else. The size of the build is a quick check (for example 403,732 bytes for the 1.0 `Arnold`).
 - **Profile-guided builds need `libgcov` linked explicitly** for the 68020 multilib, and the profile directory is part of the option because `GCOV_PREFIX` is ignored (chapter 10). Use `-Wno-error=coverage-mismatch` for builds that only changed cold code.

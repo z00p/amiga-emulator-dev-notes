@@ -243,11 +243,81 @@ Blended in 32-bit is faster than in 16-bit even with twice the bytes: RGB565PC n
 
 ## Pacing on the E-clock, never on the RTG refresh
 
+*Since Arnold 1.7 this rule holds with Paula sound only. With HDMI sound, or no sound, Arnold times its frames to the HDMI refresh instead: see the next section.*
+
 **Rule.** Time the emulation exactly as on the AGA path, on the E-clock through `timer.device` (`UNIT_WAITECLOCK`), 50 or 60 Hz switchable at any time with no jump. Never wait for the RTG flip or refresh: Paula and the E-clock stay the master clock and the display must not stall them. A 50 Hz game on a 60 Hz HDMI output shows one frame in five twice, as it does on any 60 Hz AGA display (chapter 04).
 
 **Evidence.** Bench, A1200: 50 Hz pacing standard deviation 4 us (worst 18 us); switching to 60 Hz with a screen open, 24 us (worst 120 us), 0 late frames. The native VBlank still runs under an RTG screen but the RTG screen has none of its own, so "follow the display" is forced to the emulated machine's rate in RTG mode.
 
 A 50 Hz HDMI output removes the judder. On the test machine the Pi's `config.txt` now uses the Emu68 Imager's 1080p50 entry (`hdmi_group=1`, `hdmi_mode=31`), with `disable_overscan=1`. It affects Workbench and everything else. 60 Hz games then drop one frame in six instead. The vblank-timed writes measured the new 20 ms period by themselves.
+
+## With HDMI sound, time the frames to the HDMI refresh
+
+### Two clocks 0.14% apart lose a frame every second or two
+
+*Arnold.* This is a second take on the rule above. The rule is right while Paula plays the sound, because Paula and the E-clock are then the master clock. Once the sound goes out over HDMI (through AHI and Emu68's HDMI audio driver), the picture and the sound share the HDMI clock, and the E-clock is the odd one out.
+
+**Problem.** On the PiStorm A1200, with an RTG screen at 1080p50 and HDMI sound, Sonic GX's vertical scroll had a slight judder that a tester could feel. Writes timed to the blank (above) had removed the tearing, but not the judder.
+
+**Before** (Arnold 1.6). Frames are paced on the E-clock: one Paula-sized block of 444 samples, 20028 µs, or 49.93 Hz. The HDMI output runs at 50.00 Hz. Each frame is written at the first HDMI blank after it is presented.
+
+**After** (Arnold 1.7, `Sys_PaceLock`, `RTGLOCK=0|1|2` as an argument, ToolType and preference; 1 = lock with HDMI sound or no sound, the default). Each frame is due a fixed time after a predicted HDMI blank, so it is written at the next one:
+
+    if (Sys_PaceLock && Sys_RtgActive) {
+        uint32_t u, per;
+        unsigned long t1 = Sys_Micros();
+        int ok = rtg_x_vbl_next(&u, &per) == RTG_OK && per > 19000 && per < 21000;
+        Sys_AudioLock(ok ? per : 0);
+        if (ok) {
+            ...
+            long x = (long)(due - (t1 + u + off0)) % (long)per;   /* due against blank + the start offset */
+            if (x > (long)per / 2) x -= per; else if (x <= -(long)per / 2) x += per;
+            ...
+            due -= x;
+        }
+    }
+
+*Source: Arnold-m68k 1.8 development, `arnold/src/amiga/amiga_sys.c` (GPL-2.0), calling rtgfw (MIT). The 1.7 code is the same without the late-start offset of chapter 05.*
+
+`rtg_x_vbl_next` returns the time to the next predicted blank and the measured period, from the vertical blank task's anchor (above). `Sys_AudioLock` sets the AHI sample rate to 444 samples per locked frame, so the HDMI sound queue stays at 1 to 2 blocks. Without it, the queue grew to 2 to 4 blocks, which adds 20 to 40 ms of sound lag. The emulated CPC then runs at 50.00 Hz, 0.14% fast, which nobody can hear. With Paula, the lock is off by default. `RTGLOCK=2` turns it on, and then a waiting Paula block is played 2 samples short now and then (about 30% of blocks), with no drops and no underruns.
+
+**Why.** Two clocks 0.14% apart beat about three times in 45 s. Near each crossing the frame ends sit right at the HDMI blank. There, the spread of the emulation's work (7 to 15 ms a frame in Sonic GX) puts two frames into one refresh, again and again, and each lost frame is followed by a repeat. That is the judder. With a lock, every frame is due at the same place in the refresh, so the spread never reaches the blank. The anchor's pan also falls in the emulator's idle time every frame.
+
+**Evidence.** A1200, Sonic GX scroll, 45 s runs, Blended Strong scanlines, HDMI sound:
+
+| Pacing | Frames lost in 45 s | Frame start to the picture's write |
+|---|---|---|
+| E-clock (not locked), 9 runs | 14 to 42 (about 27 on average) | about 19.0 ms on average, swinging from about 10 to 30 ms |
+| Locked to the HDMI refresh, 6 runs | 0 to 1 | about 19.7 ms, the same every frame |
+
+With Paula and no lock, 10 to 13 frames were lost per 45 s. The lock costs about 0.7 ms of lag on average and removes the swing. Chapter 05's late start then wins back about 4 ms. WinUAE's RTG has no steady blank, so the lock never engages there: test it on the real machine.
+
+**Look up.** `Sys_PaceLock`, `Sys_AudioLock`, `rtg_x_vbl_next`; notes `Docs/agent_notes/sonic16.md`, `rtg17.md`.
+
+### The rule underneath: follow the clock the sound runs on
+
+*Arnold, AmiPCEngine and AmiMSX.* The old rule and the new lock are the same rule: pace the emulation on the clock that the sound runs on. If the sound drifts against the frames, it underruns or piles up. If the picture drifts against the output, a frame repeats now and then. The sound is heard at once, the repeated frame less so.
+
+- **Paula sound:** the chipset is the master clock. Arnold without HDMI sound paces on the E-clock. AmiPCEngine and AmiMSX take the machine over and pace on the Amiga's native vertical blank or a copper tick, which still runs under an RTG screen ("What AmiMSX did instead" below).
+- **HDMI sound:** the HDMI output is the master clock, so Arnold 1.7 locks to the HDMI blank (above). This needs a way to find that blank. Arnold uses the vertical blank task's pan pair, which needs the operating system, so a takeover emulator cannot use it.
+
+The cost of following Paula on a 50 Hz HDMI output is computed here, not measured. A PAL A1200 frame is 313 lines of 227 colour clocks, 20.032 ms (49.92 Hz). The measured 1080p50 period is 19.998 ms. That is 34 µs of drift a frame, so one HDMI refresh should show a picture twice about every 12 s, and the write point moves right through the scan-out in that time. Nobody has reported or filmed it yet in AmiPCEngine, so it is an expectation and not a result. Arnold's unlocked runs above lost more frames than this beat alone gives, because the spread of the emulation's work adds to it.
+
+### A missed pan back showed a black frame
+
+**Problem.** With the lock on, the tester saw an occasional black frame flash. The lock wasn't the cause: it happened unlocked too, just rarely.
+
+**Before** (rtgfw up to Arnold 1.6). The anchor finds the blank by panning to page 1 and straight back to page 0. Page 1 held only the border colour, black. If the pan back missed its blank, page 1 stayed on screen for a whole refresh.
+
+**After** (rtgfw 51b11dc, in Arnold 1.7). Just before each anchor, page 1 gets a copy of the picture now on page 0 (about 1 ms in the vertical blank task, right after a write). A late pan back now repeats a frame instead of showing black. The calibration is also tried twice before it gives up.
+
+**Why.** A pan pair is the only blank signal the Emu68 VideoCore driver gives, and it can be held up. Wrapping it in `Forbid()` did not help: 3 held pans in 3 runs, against 0 in 3 runs without it. So the hold-up is an interrupt or the board side, not another task. A rare fault that can't be stopped can still be made harmless.
+
+**Evidence.** 19 runs of 45 s before the fix had 6 pans back that took about 20 ms instead of about 30 µs, so 6 black frames, in 3 runs. After the fix, a screenshot of the two-page screen mid-run showed page 1 holding a full frame. The tester reported no black frame, and found the locked build "the most responsive of everything tried". The anchor's own 20 ms spin remains, 0 to 3 times in 45 s, now as a repeated frame.
+
+**A measurement trap.** The first logs counted every palette load as a "merged" frame, because setting the palette also set the "pending" flag. Sonic GX loads its palette 71 times in 45 s, so every run looked as if it had about 71 lost frames. Count only the frames, and check a counter against a case where you know the answer before reading meaning into it.
+
+**Look up.** rtgfw `vt_mirror`, `vt_pan_pair`; test switches `PANMIRROR=0`, `PANFORBID=1`; notes `Docs/agent_notes/rtg17.md`.
 
 ## What AmiMSX did instead: RTG inside a takeover emulator (AmiMSX)
 
