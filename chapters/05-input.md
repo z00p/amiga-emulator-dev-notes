@@ -520,6 +520,42 @@ Lag is the time from a stick movement to the first picture that shows the game's
 
 **Evidence.** A1200 log with the double buffer off (Space Manbow): render 76 beam lines median, 163 at the 99th percentile, 6 of 728 frames late. Player: "jittery", a deal breaker.
 
+### Read the input late, but only where the picture's time is fixed
+
+**Problem.** With live drawing on AGA (every mode but SCREEN 4 on the PiStorm preset, and every mode on the 68030 preset), the frame is drawn at the tick, straight into the bitplanes on screen and behind the beam. The Z80 then emulates the next frame in about a tenth of a frame, and the loop idles until the next tick. The input that frame uses was read at the tick, most of a frame before the frame needed it.
+
+**Before** (4.6, and 4.7 up to Fix A): tick, input read, draw the last frame, emulate the next, idle.
+
+**After** (commit dbe8a5f, switch `NO_LATEREAD`): the keyboard and joystick part of the input read moves to just before the next tick. The sound updates stay at the tick, so they do not move with the read.
+
+    LrRead:                         ; after Emula1Frame
+        TST.B   LateRd              ; AGA live drawing, times known
+        BEQ.S   LrRdT
+        ...                         ; D2 = slowest emulation of the last 32
+        MOVE.W  LrPer(PC),D1        ; tick to tick, measured
+        SUB.L   D2,D1
+        SUB.L   #LRMARGIN,D1        ; 24 lines
+        BLE.S   LrRdK               ; no time to spare: read now
+        ADD.L   LrTick(PC),D1       ; CIA-B TOD at the last tick
+    LrWt:
+        BSR     TodNow
+        ...                         ; wait for the target line
+    LrRdK:
+        JSR     ActKeyJoy           ; keyboard and joysticks
+
+*Source: AmiMSX 4.7 (in development), AmiMSX_Main_v3.1.asm (freeware, used with permission).*
+
+**Why.** This is the same sizing rule as the late start of AmiPCEngine and Arnold (above; Arnold's runs only with its lock to the HDMI blank, for the reason below), which move the whole frame's start. Here only the read moves, because the draw is tied to the tick. Why it fits only one of AmiMSX's three display paths is worth knowing before copying it. A later read shortens the lag only if the picture still reaches the screen at the same moment.
+- AGA live drawing: the frame is always drawn at the next tick, so reading later is pure gain.
+- RTG: one buffer, written as soon as the frame is emulated and not locked to the HDMI refresh, so a later read only shows later. (AmiPCEngine's RTG copy waits for the Amiga vblank, which is why the late start fits there.)
+- Smooth Display: the render waits for the vertical blank after the last commit, so its read can move only about 40 lines.
+
+Check where the frame boundary sits first. AmiMSX already starts the emulated frame at the MSX's own vertical blank (VDP line 192, with the game's interrupt straight after), so AmiPCEngine's first saving was already in place.
+
+**Evidence.** Simulated on the A1200 timing logs (Space Manbow, the slowest-of-32 rule, 24 lines of margin): the read 231 to 250 lines later at the median (about 15 ms), with 9 frames late in 974 and in 4084. A late frame costs no frame here: the tick has already passed, so the wait returns at once and that frame is drawn a little late. WinUAE (68060 config, Nemesis 2): the read moved from 313 lines before the next tick to 131 (median). Regression: the same pictures on 15 titles (key scripts apply their keys by frame, not at the read). The A1200 check by feel was still to come when this was written.
+
+**Look up.** Commit dbe8a5f; `NO_LATEREAD`, `LrRead`, `LrDecide`; notes `Docs/agent_notes/lag-4.7.md` ("Fix B").
+
 ### Lag outside the emulator
 
 These add more than any of the above, and only the player can change them: the TV's game mode on the HDMI input; Paula by cable rather than HDMI sound through a Bluetooth link; wired or 2.4 GHz pads rather than Bluetooth ones. Say so in the documentation, so players do not chase a frame in the emulator while losing three in the TV.
