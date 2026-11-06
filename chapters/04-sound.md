@@ -320,3 +320,44 @@ The tick buffers hold the reference's write sequence, identical apart from the f
 **Why it's here.** Good figures only say a thing is affordable. The numbers, the model and the PC render all agreed, and none of them was the test that counted. Build the smallest version behind a switch, and put it in front of someone's ears on the real output chain before deciding anything that depends on it.
 
 **Look up.** AmiPCEngine branch `mix`, tag `mix-rtg`, not in any release; notes `docs/agent_notes/mix.md`.
+
+## One software mix for PSG and FM, chosen at power on (AmiMSX)
+
+AmiMSX 4.7 can play the PSG in software and mix it with the FM synthesis into one 14-bit stream per side (two Paula voices each), instead of giving the PSG channels and the FM their own voices. The player picks Classic (the old voice layout), Mono or Stereo. It costs CPU time, so it is a choice, with the default set by the CPU: Mono on a fast machine, Classic otherwise.
+
+**Evidence for the mix.** The software PSG follows a Python model of the chip; a check build records the 68k output, which matches the model bit for bit (Lilly's Saga mono and stereo, R-Type with FM). Both were compared with captures from openMSX. Cost in Lilly's Saga gameplay, beam lines a frame for the sound: 68030 24 lines before, 86 with the mix (speed 87% to 72%); 68060 27 before, 68 mono, 89 stereo (speed 100%, 99.6%, 95%). The player's ear test on the PiStorm was good in both modes, with no loss of speed there. So the 68030 preset keeps Classic.
+
+### A sound path switched mid-game left a channel on the old path
+
+**Problem.** Changing the mix in the menu and pressing Continue broke the sound: the PSG was moved to the other path while it was playing.
+
+**Before** (`AmiMSX_FM_v4.asm`, the first mix build): every return from the menu read the choice again.
+
+    FMXInit:
+        ...
+        MOVE.B  PrefMix,D0      ; 0 automatic, 1 Classic, 2 Mono, 3 Stereo
+        BNE.S   FMXInX1
+        ...
+    FMXInX1:
+        SUBQ.B  #1,D0
+        MOVE.B  D0,FMXMixOn
+
+**After** (commit bbeb7ce): the choice is taken at Power ON or Reset only; Continue keeps the mix the game started with.
+
+        MOVE.B  FMXMixRun,D0    ; the mix since Power ON / Reset
+        TST.B   FMXMixNew       ; set by Power ON / Reset
+        BEQ.S   FMXInX3         ; Continue: keep it
+        SF      FMXMixNew
+        MOVE.B  PrefMix,D0
+        ...
+        MOVE.B  D0,FMXMixRun
+    FMXInX3:
+        MOVE.B  D0,FMXMixOn
+
+*Source: AmiMSX 4.7 (in development), AmiMSX_FM_v4.asm (freeware, used with permission).*
+
+**Why.** The PSG's state lives in different places on the two paths (the hardware voices' registers or the software chip's counters), and the game does not write every register again after the menu, so a switch mid-game leaves notes and envelopes stranded on the path no longer played. Switching only when the machine starts again avoids converting live state. The user guide says the change takes effect at the next Power ON or Reset.
+
+**Evidence.** The player's report of the broken sound after a mid-game switch. The fix removes the mid-game switch rather than converting live state; the player's retest was still to come when this was written.
+
+**Look up.** Commits f915fb2 (the mix), bbeb7ce (the latch); `tools/psg_synth.py`, `tools/psx_check.py`; option `mix` in key scripts.

@@ -252,3 +252,130 @@ The key-map screen has a preset list (None, Pinball with Right Shift = M, cursor
 The logic (preset table, parsing and printing of pairs, Amiga and CPC key names, the one-line summary that must fit the menu) is a plain C module with its own unit check (`tools/keymap_test.sh`: names valid, presets round-trip, summary fits), so the Amiga window code is only glue. Bugs found by running the editor in WinUAE: the menu window was not active again after the editor closed (`ActivateWindow`); the "Save for game" shortcut used raw key 0x22 instead of 0x24 (G); and a summary line of 76 characters clipped its last character, so the limit is 74. The editor and the menu both fit the 200-line NTSC screen (the editor ends near line 175); chapter 02 has the layout rule.
 
 **Look up.** Commits 677bfc9, adb8aec, c7c1f6b; `KEYMAP.md`; `KeyMap_Presets`.
+
+## Controller lag: measure the frame, then reorder it (AmiMSX)
+
+Lag is the time from a stick movement to the first picture that shows the game's answer. The game's own share (it may read the stick once a frame, or move the ship a frame later) is the same on every emulator, so the part worth working on is ours: when the input is read, how long after that the frame is emulated, and when the result reaches the screen.
+
+### Log where each frame waits before changing anything
+
+**Problem.** Players on a PiStorm A1200 asked for quicker response, and the code did not say where the time went: the frame loop had grown over many versions (frame skip, double buffer, RTG, key scripts).
+
+**Before.** No measurement: only "it feels a bit slow", which cannot tell a change of one frame from none.
+
+**After** (a log build, `-DLAGLOG=1`). For every emulated frame, three stamps of the VBlank count and beam line: at the end of the emulation, after the input read, and after the render. Then a sum of the video memory at the render, and, for each change of the input, the frame and line where the game first read it. The same key script runs twice in WinUAE, without and with a press at frame N; the first frame whose video sum differs is the game's answer. The log is written at the first return to the menu, so the same build runs on the real machine: the player plays, presses HELP, and sends the file.
+
+    Emula1Frame:
+        IFD   LAGLOG
+        JSR   LagEntry          ; end of the emulated frame: VBlank, beam line
+        ENDC
+        ...
+        BSR   Wait60fps         ; the tick (copper interrupt, ~line 236)
+        ...
+        JSR   Act_Hardware      ; keyboard and joysticks read here
+        ...
+        IFD   LAGLOG
+        JSR   LagSample         ; the input as sampled
+        ENDC
+        ...
+    RendDone:
+        IFD   LAGLOG
+        JSR   LagRender         ; render done, video memory sum
+        ENDC
+
+*Source: AmiMSX 4.7 (in development), AmiMSX_Main_v3.1.asm (freeware, used with permission).*
+
+**Why.** Every frame of the emulator is a pipeline: wait for the tick, read the input, emulate (the game reads the input), draw, show. Changes to lag are about the order of those steps, and a log of where each step lands on the beam shows the order as it really runs, on each machine.
+
+**Evidence.** The first log showed that every emulated frame was drawn one tick after it was emulated: the loop emulated a frame, then waited for the next tick before drawing it. On the A1200 the PiStorm emulates a frame in about a tenth of a frame and draws it in about half a frame, so most of the frame was spent waiting with a finished picture.
+
+**Look up.** Commit 28245b7; `tools/lagtest.py` (press and no-press runs, the analysis), `tools/lagshown.py` (read-to-shown for the double buffer); notes `Docs/agent_notes/lag-4.7.md`. The log is in BSS, so its marker reads as zero in the file: the tools find it at a fixed offset from the end (see [chapter 07](07-toolchains-release.md#incbin-into-a-bss-section-gives-zeros-silently) for the same trap with `INCBIN`).
+
+### Draw the frame as soon as it is emulated
+
+**Problem.** On the RTG screen (HDMI), each press reached the screen one tick (20 ms at 50 Hz) later than it had to.
+
+**Before** (`AmiMSX_Main_v3.1.asm`, 4.6): the frame just emulated waits for the next tick, then the input is read, then the frame is drawn.
+
+    Emula1Frame:
+        BSR   Wait60fps         ; wait for the next tick
+        ...
+        JSR   Act_Hardware      ; read the input
+        ...
+        JSR   RtgFrame          ; draw the frame emulated before the wait
+
+**After** (commit b970b3a, switch `NO_EARLYDRAW`): an RTG frame is drawn first, then the wait, then the input read; after the wait only a key-script capture is left.
+
+    Emula1Frame:
+        SF    EarlyDone
+        JSR   RtgUse
+        TST.B RtgNow
+        BEQ.S E1FLate           ; AGA: as before
+        BSR   E1FTail           ; draw it now
+        ST    EarlyDone
+    E1FLate:
+        ...
+        BSR   Wait60fps
+        ...
+        JSR   Act_Hardware
+        ...
+        TST.B EarlyDone
+        BEQ.S E1FTail           ; not drawn yet: draw now (the old order)
+        ...                     ; drawn: only a pending SNAP
+        RTS
+
+*Source: AmiMSX 4.7 (in development), AmiMSX_Main_v3.1.asm (freeware, used with permission).*
+
+**Why.** The wait exists to pace the emulation at 50 or 60 frames a second, not to hold a finished picture. A fast machine finishes the frame long before the next tick, so it can be shown at once. A slow machine loses nothing: it would have drawn right after the wait anyway.
+
+**Evidence.** WinUAE (RTG, real time, Nemesis 2, a press at four offsets): every press on screen one tick sooner. A1200 (PiStorm, RTG over HDMI), the player's log: input read to the end of the drawing 50 beam lines median (3 ms), 99th percentile 9 ms; before, about 460 lines (29 ms). By feel, in an A/B the player preferred the new build. Regression: the same pictures as before on every title where both runs caught one.
+
+**Look up.** Commit b970b3a; `NO_EARLYDRAW`.
+
+### Commit the double-buffered frame before the wait, too
+
+**Problem.** With the double buffer on (AGA, SCREEN 4, the PiStorm preset: chapter 02), a frame read its input at one tick, was drawn at the next tick, committed at the start of the pass after that, and shown from the following VBlank: the finished picture waited a whole pass for its commit.
+
+**Before** (4.6): the commit of the last frame at the start of the pass, then the wait, the copper list for the new frame, the input, the render into the back buffer. The render's picture waits a whole pass for its commit.
+
+**After** (commit 9779ef5, switch `NO_EARLYDB`): when the double buffer is running, the copper list, the render into the back buffer and the commit all happen before the wait. The pass after the wait only reads the input.
+
+    E1FEarDb:
+        LEA   Regs(PC),A3
+        TST.B DbOn              ; double buffer running, SCREEN 4,
+        BEQ.S E1FEdX            ; option on, no MSX-Music...
+        ...
+        JSR   ActBorder         ; border colour into this frame's snapshot
+        JSR   DbLineSafe        ; the list on screen is not rebuilt
+        JSR   BMSPrep
+        JSR   ActCopperLine     ; the per-line copper list
+        LEA   Regs(PC),A3       ; (ActCopperLine's list pointer)
+        BSR   E1FTail           ; render into the back buffer
+        JSR   DbCommitF         ; commit (or drop it, if late)
+        ST    EarlyDone
+    E1FEdX:
+        RTS
+
+*Source: AmiMSX 4.7 (in development), AmiMSX_Main_v3.1.asm (freeware, used with permission).*
+
+**Why.** The double buffer exists so a frame is shown whole at a frame start. It does not need the render to wait for the next tick: the render's own wait (for the VBlank after the last commit, before the old front buffer is drawn over) already keeps it off the screen until it is safe. Everything the late-frame logic relied on (drop a frame that finishes after the next VBlank) still holds, because the commit test reads the VBlank count and beam line, not its place in the loop.
+
+**Evidence.** WinUAE (68060, Space Manbow, double buffer on, no press), from the input read to the commit plus one VBlank: median 4 VBlanks before, 3 after; 95th percentile 5 before, 4 after. Regression with the double buffer on (15 titles on the 68030 config): the same pictures as the old build. The A1200 check was still to come when this was written.
+
+**Look up.** Commit 9779ef5; `NO_EARLYDB`; `tools/lagshown.py`. Moving a call before a register reload broke it at first: [Reordering a frame loop moves calls before a register reload](06-testing.md#reordering-a-frame-loop-moves-calls-before-a-register-reload).
+
+### A faster path is not a better one until someone has looked at it
+
+**Problem.** With the render now taking a quarter of a frame on the PiStorm, the double buffer looked unnecessary: it costs one frame of lag in SCREEN 4 games, and live drawing should finish before the beam reaches the picture.
+
+**Before.** The plan was to drop the double buffer on fast machines if the log showed live drawing staying ahead of the beam.
+
+**After.** A preset with the double buffer off went to the player for an A/B through the scaler, and the double buffer stays.
+
+**Why.** The log measures our timing, not the picture. Its figures were good, but the player saw scrolling judder without the double buffer, and that ended the experiment. Ask for an A/B by eye on the real display chain before removing anything that exists for the picture.
+
+**Evidence.** A1200 log with the double buffer off (Space Manbow): render 76 beam lines median, 163 at the 99th percentile, 6 of 728 frames late. Player: "jittery", a deal breaker.
+
+### Lag outside the emulator
+
+These add more than any of the above, and only the player can change them: the TV's game mode on the HDMI input; Paula by cable rather than HDMI sound through a Bluetooth link; wired or 2.4 GHz pads rather than Bluetooth ones. Say so in the documentation, so players do not chase a frame in the emulator while losing three in the TV.

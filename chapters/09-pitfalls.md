@@ -53,6 +53,7 @@ One line per pitfall, with the lesson that explains it. Read the lesson before a
 - A block move goes through the page register of every byte. Several faults in different titles can be this one. ([A block move goes through the page register of every byte](03-cpu-cores.md#a-block-move-goes-through-the-page-register-of-every-byte))
 - An instruction that changes the clock speed is not a NOP: a boot delay loop that runs too fast can look like a graphics fault. ([CSL is not a NOP: a delay loop ran four times too fast](03-cpu-cores.md#csl-is-not-a-nop-a-delay-loop-ran-four-times-too-fast))
 - Masking an address wraps it; the real chip may lose the write. Ask which before you mask. ([Writes past the end of VRAM are lost, not wrapped](03-cpu-cores.md#writes-past-the-end-of-vram-are-lost-not-wrapped))
+- Run block instructions (`LDIR`, `OTIR` and the rest) a step at a time when a line ends mid-run, or a line interrupt waits for the whole copy. ([A long LDIR must let a line interrupt in between its steps](03-cpu-cores.md#a-long-ldir-must-let-a-line-interrupt-in-between-its-steps))
 
 ## Input
 
@@ -62,6 +63,9 @@ One line per pitfall, with the lesson that explains it. Read the lesson before a
 - Scripted test runs must ignore the host's keyboard, mouse and joysticks. ([Scripted runs must ignore the host's input](05-input.md#scripted-runs-must-ignore-the-hosts-input))
 - Remap at the translation of keys, before anything else interprets them, behind one test; document that a remapped modifier stops acting as a modifier. ([Remap at the keyboard translation, behind one test](05-input.md#remap-at-the-keyboard-translation-behind-one-test))
 - For every per-game setting, run one test that saves it, restarts and checks it was used (a case-sensitive keyword comparison hid a whole preferences path). ([Test the hook the way a user reaches it](05-input.md#test-the-hook-the-way-a-user-reaches-it))
+- Log where each frame waits (VBlank and beam line at the end of the emulation, the input read and the render) before changing the frame loop for lag. ([Log where each frame waits before changing anything](05-input.md#log-where-each-frame-waits-before-changing-anything))
+- Show a finished frame at once and wait afterwards; the tick wait paces the emulation, it should not hold a finished picture. This applies to a double buffer's commit too. ([Draw the frame as soon as it is emulated](05-input.md#draw-the-frame-as-soon-as-it-is-emulated), [Commit the double-buffered frame before the wait, too](05-input.md#commit-the-double-buffered-frame-before-the-wait-too))
+- Before removing something that exists for the picture (a double buffer), get an A/B by eye on the player's display chain: good timing figures did not mean smooth scrolling. ([A faster path is not a better one until someone has looked at it](05-input.md#a-faster-path-is-not-a-better-one-until-someone-has-looked-at-it))
 
 ## Testing
 
@@ -100,6 +104,10 @@ One line per pitfall, with the lesson that explains it. Read the lesson before a
 - Latch scripted input at the emulated frame, or builds of different speed diverge. ([Latch scripted input at the emulated frame, not at the host's vblank](06-testing.md#latch-scripted-input-at-the-emulated-frame-not-at-the-hosts-vblank))
 - When every title gives "no result", suspect the rig first: a config can point at another checkout and give no error. ([A test config pointing at another checkout gives "no result" on every title](06-testing.md#a-test-config-pointing-at-another-checkout-gives-no-result-on-every-title))
 - A memory guard takes the overrun that would crash the real build: read the guard report, and run long enough to reach the fault. ([A guard block catches the overrun, and so hides the crash](06-testing.md#a-guard-block-catches-the-overrun-and-so-hides-the-crash))
+- When calls move within a loop, list the registers each needs on entry and who set them in the old order: a routine left A3 as its copper pointer, and the reload came after it. ([Reordering a frame loop moves calls before a register reload](06-testing.md#reordering-a-frame-loop-moves-calls-before-a-register-reload))
+- Find a hang with variant builds that each change one thing (compiled out, padded to the same size, early returns at each stage), not by reading. ([Find a hang with variant builds, not by reading](06-testing.md#find-a-hang-with-variant-builds-not-by-reading))
+- Write a test build's log with `PROGDIR:`, not the program's assign: a tester without the assign gets a "Please insert volume" requester. ([Write the log next to the program, not to its assign](06-testing.md#write-the-log-next-to-the-program-not-to-its-assign))
+- Do not put `&` inside a command an agent already runs in the background: the subshell outlives the task, and a rerun then shares its slots and log. ([A subshell sent to the background keeps running after its task "finishes"](08-agent-workflow.md#a-subshell-sent-to-the-background-keeps-running-after-its-task-finishes))
 
 ## Sound and performance
 
@@ -117,6 +125,7 @@ One line per pitfall, with the lesson that explains it. Read the lesson before a
 - Capture timer-driven samples on the timer's grid; a line grid adds a pattern tone. ([Samples written by a timer belong on the timer's grid, not the line grid](04-sound.md#samples-written-by-a-timer-belong-on-the-timers-grid-not-the-line-grid))
 - Skip waiting loops by whole passes only while nothing but the CPU can change memory inside a line, and only outside pages that can hold I/O. ([Do not interpret a loop that can only wait](10-performance-emu68.md#do-not-interpret-a-loop-that-can-only-wait))
 - Measure a speed-up on the machine it is for: +75% on a 68030 config changed nothing on the PiStorm's AGA path. ([The same work changed nothing on the PiStorm](10-performance-emu68.md#the-same-work-changed-nothing-on-the-pistorm))
+- Switch a sound path (voice layout, software mix) only at power on or reset, never on Continue: live channel state is stranded on the old path. ([A sound path switched mid-game left a channel on the old path](04-sound.md#a-sound-path-switched-mid-game-left-a-channel-on-the-old-path))
 
 ## RTG output
 

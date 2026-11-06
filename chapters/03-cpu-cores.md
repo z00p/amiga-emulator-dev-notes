@@ -995,3 +995,50 @@ The same trick keeps a mapper off every other game's hot path. Street Fighter II
 **Evidence.** Frame 1800 0.02%. Cost: one TST.B and BMI per VRAM write.
 
 **Look up.** Commit 31f517c; test switch `VdcLog`; notes `docs/agent_notes/p1.md`, part 1.
+
+## Block instructions run a step at a time (AmiMSX)
+
+### A long LDIR must let a line interrupt in between its steps
+
+**Problem.** Space Manbow 2's title screen sometimes showed its split under the logo up to 16 lines late: a line interrupt fired well after its line.
+
+**Before** (`AmiMSX_Main_v3.1.asm`, 4.6): the whole block instruction ran at once, and its cycles were charged together.
+
+    INIR:
+        MOVE.W  D5,D1
+        LSR.W   #8,D1
+        MULU    #23,D1          ; B*(21+2) - 12, + the final Otra 5:
+        SUB.W   #12,D1          ; (B-1)*23 + 18 as on the MSX.
+        SUB.W   D1,(A3)         ; * Resta Cycles *  (all of it, now)
+        ...
+
+**After** (commit ec132fa, merged into 4.7): each block instruction runs the steps that fit in the current line's cycles. When the line runs out with the count not done, the PC goes back to the `ED` prefix and the line end is taken, as after any other instruction, so the next line can raise its interrupt.
+
+    ; A step that leaves the count non-zero: 22 cycles, + 1 for the next
+    ; step's prefix wait, then the next step (\1); \2 when the line's
+    ; cycles have run out.
+    BLKSTEP: MACRO
+        SUB.W   #23,(A3)
+        BPL.S   \1
+        ADDQ.W  #1,(A3)
+        BMI.S   \2
+        SUBQ.W  #1,(A3)
+        BRA.S   \1
+        ENDM
+
+    ; PC back to the ED, the opcode fetched again, then the line end.
+    BLKYLD: MACRO
+        MOVE.W  A5,D1
+        SUB.W   (A7),D1         ; Z80 address after the opcode
+        SUBQ.W  #2,D1           ; back to the ED
+        ...
+        JMP     (MiraInter-Regs.W,A3)
+        ENDM
+
+*Source: AmiMSX 4.7 (in development), AmiMSX_Main_v3.1.asm (freeware, used with permission).*
+
+**Why.** A Z80 runs `LDIR`, `CPIR`, `INIR`, `OTIR` and the D forms one step at a time: after each step that leaves the count non-zero, the PC goes back two bytes and the instruction runs again, so an interrupt can arrive between steps. An emulator that runs the loop in one go is faster, but the line interrupt that should land mid-copy waits for the whole copy. The registers between steps must be the Z80's (HL, DE, BC or B moved on; P/V or Z set from the count), because the interrupt handler can see them. `LDIR`/`LDDR` keep a bulk copy loop: they count the steps that fit first (one multiply, and a divide only when they don't all fit). The I/O and compare forms charge each step as it runs, so a port handler sees the time of its own step.
+
+**Evidence.** 14 test programs for the block instructions give the same results as openMSX. Space Manbow 2's title in consecutive-frame bursts: 0 late splits on AGA and RTG, was 2 in 32 frames. Full regression: 53 of 87 titles changed, as expected when long copies at boot now take real time; the sheets checked showed gameplay drift (enemies, score and positions moved), no corruption.
+
+**Look up.** Commit ec132fa; notes `Docs/agent_notes/blockint_2026-11-03.md`; `tools/make_blktest.py`.

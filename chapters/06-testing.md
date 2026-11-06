@@ -719,3 +719,72 @@ so each sprite marked (column + 1) x 16 dirty lines. A sprite in the bottom-righ
 The pattern itself pointed at the cause: one byte in every 8 set to `$FF` is a bitmap with 8 bytes a line. The link to the tester's alert is by timing and code, not by a trace of that alert. An earlier use of the guards: HuZERO's alert 8100 0005 (corrupt memory list) was traced the same way to a copper list buffer of 8 bytes that took 76 bytes per scroll change; the guards showed two blocks fully overwritten (`NO_COPFIX`).
 
 **Look up.** Commits 37cbece, fd33808; `MemCheckInit`, test switches `CodeCheck`, `AutoMenu`, `MenuAuto`; notes `docs/agent_notes/crash.md`.
+
+## Bisecting a hang with variant builds
+
+### Reordering a frame loop moves calls before a register reload
+
+**Problem.** After the double-buffered frame was moved before the wait (chapter 05), four of fifteen regression titles on the 68030 config gave no captures at all: a black window from the first seconds. One of them was an MSX1 game that never uses SCREEN 4.
+
+**Before** (the first version of the reordered path):
+
+        JSR   ActCopperLine     ; builds the per-line copper list
+        BSR   E1FTail           ; render: JSR ([RVDP.W,A3]) ...
+
+**After** (commit 9779ef5):
+
+        JSR   ActCopperLine
+        LEA   Regs(PC),A3       ; (ActCopperLine's list pointer)
+        BSR   E1FTail
+
+*Source: AmiMSX 4.7 (in development), AmiMSX_Main_v3.1.asm (freeware, used with permission).*
+
+**Why.** `ActCopperLine` writes the copper list through A3 (`MOVE.W D2,(A3)+`), so it returns with A3 pointing into the list, not at the emulator's registers. In the old order a `LEA Regs(PC),A3` came straight after it, before the input read, and the render ran later still. Moved forward, the render read its renderer address through `RVDP(A3)` of a pointer into the copper list and jumped into nothing. Nothing in the routine's comment said it used A3; the old caller simply never relied on A3 surviving it. When code moves within a loop, list the registers each moved call needs on entry and check who set them in the old order.
+
+**Evidence.** The MSX1 game turned out to run the SCREEN 4 renderer for its first frames at boot, before the BIOS sets its screen mode, so it took the new path too. With the reload: 15 of 15 titles as before.
+
+### Find a hang with variant builds, not by reading
+
+**Problem.** A hang in WinUAE gives nothing to read: no log is written (it is written at the return to the menu), the screen is black, and the code looked right.
+
+**Before.** Reading the code for an hour, through three plausible causes (an unguarded wait, the stack, the copper interrupt).
+
+**After.** One title, one config, the slot harness, and builds that each change one thing, about two minutes a run:
+
+| Build | Change | Result |
+|---|---|---|
+| new | the new path | 0 of 3 captures |
+| v3 | new path compiled out (`NO_EARLYDB`) | 3 of 3 |
+| v5 | v3 + 128 bytes of padding where the new code was | 3 of 3: not the code layout |
+| v6 | new + the scratch stack doubled | 0 of 3: not the stack |
+| vA | new path returns after its checks | 3 of 3: the checks pass on this title |
+| vB | new path does the copper list, then returns | 3 of 3 |
+| vD | new + no tick wait after an early frame | 0 of 3: not the tick interrupt |
+
+That left the render itself, called right after the copper list, and the register above.
+
+**Why.** Each variant halves what is left, and a hang is binary: captures or none. Padding to the same size rules out the layout (alignment and cache effects, which have caused trouble before), and an early `RTS` at each stage of a new routine finds the step that breaks without understanding it first.
+
+**Look up.** `Docs/agent_notes/lag-4.7.md`; the harness is in this chapter's WinUAE section.
+
+## Logs from the player's machine
+
+### Write the log next to the program, not to its assign
+
+**Problem.** A timing build sent to a player for a real-hardware test put up "Please insert volume AmiMSX in any drive" each time a game returned to the menu. The player suspected new software they had just installed.
+
+**Before** (the log build):
+
+    PerfName:   DC.B  "AmiMSX:perf.bin",0
+
+**After** (commit a47d098):
+
+    PerfName:   DC.B  "PROGDIR:perf.bin",0   ; next to the program: the
+                                            ; tester's A1200 has no AmiMSX:
+                                            ; assign
+
+*Source: AmiMSX 4.7 (in development), AmiMSX_Menu_v3.1.asm (freeware, used with permission).*
+
+**Why.** The development machines all had the program's assign; a player who starts it from a drawer icon has none, and AmigaDOS asks for the missing volume. `PROGDIR:` is the directory the program was loaded from, on every machine.
+
+**Evidence.** The player's photos of the requester; with `PROGDIR:` the log arrived in the drawer with no requester. Tell the tester it was the build, not their setup, as soon as you know.
