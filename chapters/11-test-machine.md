@@ -36,16 +36,16 @@ started remotely as `Run >NIL: <NIL: Execute "Play A1200"`.
 
 ### Paths with spaces break programs that start helpers by full path
 
-**Problem.** Quake III could not load its native game modules. A console window showed `NAS:PC: Unknown command`, and the game fell back to the much slower bytecode modules (the ones that then crashed on the small stack).
+**Problem.** Quake III could not load its native game modules. A console window showed `NAS:My: Unknown command`, and the game fell back to the much slower bytecode modules (the ones that then crashed on the small stack).
 
-**Before:** the game ran from a drawer whose path contains spaces (on the share: `PC Games/_Needs PiStorm 3D/Quake III Arena (...)`). Its log read:
+**Before:** the game ran from a drawer whose path contains spaces (for example `My Games/Quake III Arena (...)` on the share; folder names are generic here). Its log read:
 
-    Sys_LoadDll(NAS:PC Games/_Needs PiStorm 3D/.../baseq3/ui68k.dll)...
+    Sys_LoadDll(NAS:My Games/.../baseq3/ui68k.dll)...
     Failed loading dll, trying next
 
 **After:** the launch script above. The game lives in a subdrawer `Q3`, the script assigns a space-free name to the drawer and passes it as `fs_basepath`. The log then reads `Sys_LoadDll(Q3D:Q3/baseq3/ui68k.dll)...` with no failure.
 
-**Why.** The port starts each module as a separate program by building a command line from the full path. AmigaDOS splits that command line at the first space, so `NAS:PC` is taken as the command name. Setting `CD` alone is not enough: the engine resolves the current directory to its full path. The base path must be given explicitly as a path without spaces.
+**Why.** The port starts each module as a separate program by building a command line from the full path. AmigaDOS splits that command line at the first space, so `NAS:My` is taken as the command name. Setting `CD` alone is not enough: the engine resolves the current directory to its full path. The base path must be given explicitly as a path without spaces.
 
 **Evidence.** Two log runs, before and after. A Quake II port by the same author showed the same failure on another machine, and the same fix worked there.
 
@@ -53,19 +53,19 @@ started remotely as `Run >NIL: <NIL: Execute "Play A1200"`.
 
 ### Brackets are wildcards for Copy and List
 
-**Problem.** A copy of a game drawer called `Star Wars Jedi Knight - Dark Forces II (OpenJKDF2)` copied nothing and printed no error (`QUIET`). `List` of a drawer named `157 Heliobane (2026)` printed nothing at all.
+**Problem.** A copy of a game drawer called `Some Game - Part II (Port)` copied nothing and printed no error (`QUIET`). `List` of a drawer named `157 Another Game (2026)` printed nothing at all.
 
 **Before:**
 
-    Copy "NAS:PC Games/Syndicate (FreeSynd)" "Games:PC Games/Syndicate (FreeSynd)" ALL CLONE QUIET
+    Copy "NAS:My Games/Some Game (Port)" "Games:My Games/Some Game (Port)" ALL CLONE QUIET
 
 Result: `Wildcard destination invalid`.
 
 **After:**
 
-    Assign DST: "Games:PC Games/Syndicate (FreeSynd)"
-    Copy "NAS:PC Games/Syndicate '(FreeSynd')" DST: ALL CLONE QUIET
-    Copy "NAS:PC Games/Syndicate '(FreeSynd').info" "Games:PC Games/" CLONE QUIET
+    Assign DST: "Games:My Games/Some Game (Port)"
+    Copy "NAS:My Games/Some Game '(Port')" DST: ALL CLONE QUIET
+    Copy "NAS:My Games/Some Game '(Port').info" "Games:My Games/" CLONE QUIET
     Assign DST: REMOVE
 
 **Why.** `(`, `)` and `|` are AmigaDOS pattern characters. A source name with brackets is treated as a pattern that no longer matches the literal name. Escape each bracket with `'` in a source. A destination may not contain a pattern at all, even an escaped one, so reach it through an assign. `CD`, `Assign` and `MakeDir` take plain names and are not affected.
@@ -76,7 +76,7 @@ Result: `Wildcard destination invalid`.
 
 `C:WBRun` is not part of every OS 3.2 install. This machine has `C:WBLoad` instead, which starts an icon (including an Installer script with its tooltypes) as if it were double-clicked:
 
-    CD "NAS:Install/PrinceOfPersia2/PoP2 Install"
+    CD "NAS:Install/Some Game/Game Install"
     Run >NIL: <NIL: C:WBLoad Install
 
 The Installer window can then be driven remotely with clicks on its gadgets (see the next section).
