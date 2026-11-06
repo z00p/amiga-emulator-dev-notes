@@ -1,4 +1,6 @@
-# Writing emulators for the Amiga: notes from the PiStorm A1200
+# Claude and the Art of Writing Emulators for the Amiga
+
+*Notes from the PiStorm A1200*
 
 Practical notes from three emulator projects for AGA Amigas:
 

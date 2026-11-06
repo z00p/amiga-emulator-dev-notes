@@ -1,6 +1,6 @@
 # Licence
 
-**Text** (all prose, tables and diagrams in this repository): Creative Commons Attribution 4.0 International (CC BY 4.0), https://creativecommons.org/licenses/by/4.0/. Credit "Writing emulators for the Amiga: notes from the PiStorm A1200 (AmiMSX, Arnold for the Amiga and AmiPCEngine contributors)".
+**Text** (all prose, tables and diagrams in this repository): Creative Commons Attribution 4.0 International (CC BY 4.0), https://creativecommons.org/licenses/by/4.0/. Credit "Claude and the Art of Writing Emulators for the Amiga (AmiMSX, Arnold for the Amiga and AmiPCEngine contributors)".
 
 **Code excerpts** keep the terms of the project they come from, stated under each excerpt:
 
