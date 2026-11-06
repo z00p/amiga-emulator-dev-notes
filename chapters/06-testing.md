@@ -843,3 +843,63 @@ That left the render itself, called right after the copper list, and the registe
 **Why.** The development machines all had the program's assign; a player who starts it from a drawer icon has none, and AmigaDOS asks for the missing volume. `PROGDIR:` is the directory the program was loaded from, on every machine.
 
 **Evidence.** The player's photos of the requester; with `PROGDIR:` the log arrived in the drawer with no requester. Tell the tester it was the build, not their setup, as soon as you know.
+
+## Save states: a harness that tries to break them
+
+### Five checks, run headless on every change to the machine state
+
+*Arnold.* Arnold's save states are exact: a state saved at frame F, loaded and run on, gives the same frames and sound as a run that was never stopped. Once a state format can carry a whole machine, any new field, chunk or timing value can break it in ways a user only finds weeks later. So every change to what a state holds runs the same headless harness.
+
+**Problem.** In Arnold 1.8 development, the frame boundary moved to the CPC's VSYNC (chapter 05). That added two values to the machine's state, and it meant a frame no longer ended on a whole number of sound blocks. Both are easy ways to break a state silently.
+
+**The checks** (`tools/savestate/check.sh` in the development repository):
+1. **Resume.** Save at a set of frames, load each state into a fresh process and run on. Every later frame checksum and the sound tail must equal the plain run's.
+2. **Round trip.** Load a state and save it again at once. The two files must be identical.
+3. **Saving is invisible.** A run that saves states along the way must equal a run that does not.
+4. **Refusals.** A flipped byte, a file cut short at 11 lengths, another format version, random bytes, another cartridge, the wrong machine, a tape state with no tape: each must be refused, and the run must then go on exactly like a plain one. A crash counts as a failure.
+5. **Fuzz.** 300 states with random changes and the checksum fixed, so they get past the first test. Each must be refused (and, if it was refused part way through, the machine put back exactly) or loaded. None may crash.
+
+Two more checks cover versions and hosts. A state from the previous release must load into the new build and give the old run exactly. The other way round, the old release must refuse a new state cleanly. A state made on the Amiga build must also load in the PC build, and a PC state on the Amiga.
+
+**Why.** Each check catches a different fault. Resume catches a value that is not saved. Round trip catches one that is saved but not loaded. "Invisible" catches a save that changes the machine, for example by flushing the sound at the wrong moment. Refusals and fuzz catch a loader that trusts its input. The headless host makes all of it cheap: the whole set runs in minutes on a PC.
+
+**Evidence.** After the VSYNC change: resume 143 same and 0 different; round trip 138 and 0; invisible 31 and 0; refusals 23 and 0; fuzz 300 (175 refused, 172 of them part way with the machine put back exactly; 125 loaded); 0 crashes. Previous-release states into the new build: 24 of 24 exact. New states into the previous release: 24 of 24 refused with the machine unchanged, but with a misleading message ("a section is 16 bytes off"). That led to the plan to put new values in a separate chunk that older releases skip.
+
+**Look up.** `tools/savestate/check.sh`, `mutate.py`; `tools/lag18/ss_check.sh`, `ss_compat.sh`, `uae_test.py`; notes `Docs/agent_notes/lag18.md`, "Save states".
+
+## Leave the rig as you found it
+
+*Arnold.* The WinUAE regression rewrites a batch file in the shared run folder, and a session that forgets to restore it leaves the next run testing the wrong titles. After each run, restore the file from git and check the boot script against a known checksum. The checks are two commands and take a second. Run them after every regression or smoke run, and before you hand WinUAE to another session.
+
+## What works and what doesn't
+
+A summary of this chapter and the testing lessons in other chapters, across the three projects. Each row names the section with the details.
+
+### What works
+
+| Technique | Good for | Where |
+|---|---|---|
+| A headless PC build of the core with a checksum of every frame | Proving a speed change exact, bisecting a merge, save states, lag in whole frames; minutes per run | "A headless x86 host", "Save states" |
+| One `NO_x` switch per change, and a build with all of them that equals the last release | Exactness, bisecting, A/B on the real machine, a fallback for users | "NO_x switches and AUDIT mode" |
+| Key scripts typed inside the emulator, with captures at exact emulated frames | Repeatable picture regressions in WinUAE, independent of window focus | "WinUAE automation" |
+| A signal that only the program can give (a result file, the power LED) | Telling "no result" from "same result" | "The power LED", "The rig first" |
+| Bursts of consecutive frames against the reference emulator | One-frame glitches that a three-shot regression misses | "Consecutive-frame bursts" |
+| Test ROMs compared byte for byte with the reference emulator | CPU and video-chip details | "Comparing with a reference emulator" |
+| Scripted runs on the real machine over the network | Real frame times, unattended, repeated for hours | "Real hardware over the network" |
+| Debug rows on the screen and a photo from the tester | Programs that take over the machine (no OS, no files) | "Debug rows on the screen" |
+| Totals in a result file, probe counters, a state dump at exit | Sweeps without a camera; finding why, not just that, something is slow | "Add the windows up", "When the rows say slow" |
+| A blind A/B for the tester, with neutral names | Feel, judder and sound, where 4 ms or a filter is near the limit of perception | Chapter 05, "Ask the tester the right question" |
+
+### What doesn't
+
+| Approach | Why it fails | Where |
+|---|---|---|
+| WinUAE speed as a guide to PiStorm speed | The JIT 68040 says whether the picture is right, not whether the frame fits in 20 ms | Chapter 10 |
+| x86 profile counts as a guide to Emu68 hot spots | A different CPU, cache and JIT | Chapter 10 |
+| WinUAE window grabs, or captures after the render, as the last word on the picture | Colour boosted by the default output, and nothing of what the beam shows | "Capture colours", "Blind spots" |
+| Comparing grabs with no "the program ran" signal | Two grabs of the wrong screen match perfectly | "A grab of the wrong screen compares equal" |
+| Checking all switches on at once only | A switch that does not build or run alone goes unseen | "All switches on must rebuild the last binary" |
+| Host timing alone for lag | It cannot see a frame lost to where the emulator's frame ends | Chapter 05, Arnold's lag section |
+| WinUAE's emulated CD32 pad in the test harness | It never answered there, so pad code was checked against WinUAE's source and on real pads | Chapter 05 |
+| A figure that measured well, kept without listening or looking | A software sound mix and live drawing without the double buffer both measured better and were rejected by ear and eye | Chapters 04, 05 |
+| A question that names the answer | "LateOff" on an icon steered the first verdict | Chapter 05 |

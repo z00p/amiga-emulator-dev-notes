@@ -20,7 +20,7 @@ Each lesson shows real code **before and after** a fix, the symptom it caused, a
 | 02 | [Display on AGA](chapters/02-display-on-aga.md) | AmiMSX (Arnold adds OS-screen topics, AmiPCEngine colour 0, sprite priority and redraw flags) |
 | 03 | [CPU cores in 68k](chapters/03-cpu-cores.md) | all three |
 | 04 | [Sound](chapters/04-sound.md) | Arnold, AmiPCEngine |
-| 05 | [Input](chapters/05-input.md) | AmiMSX (AmiPCEngine adds input lag) |
+| 05 | [Input](chapters/05-input.md) | AmiMSX (all three add controller lag; Arnold adds a CD32 read in C) |
 | 06 | [Testing](chapters/06-testing.md) | all three |
 | 07 | [Toolchains and release](chapters/07-toolchains-release.md) | AmiMSX, Arnold (AmiPCEngine adds one vasm lesson) |
 | 08 | [Agent workflow](chapters/08-agent-workflow.md) | both |
@@ -31,6 +31,12 @@ Each lesson shows real code **before and after** a fix, the symptom it caused, a
 
 Sections marked *To be written* are placeholders for the other project's material.
 
+## Code kits
+
+Small routines taken out of the projects so they can be used on their own, under the MIT licence:
+
+- [kits/cd32pad](kits/cd32pad/README.md): reads a CD32 pad by hand, timed with CIA reads so it works on any CPU. In 68k asm (from AmiMSX) and in C (from Arnold), with a Shell test tool.
+
 ## Licence
 
-The text is CC BY 4.0. Code excerpts keep their source project's terms, which are given under each example. See [LICENSE.md](LICENSE.md).
+The text is CC BY 4.0. Code excerpts keep their source project's terms, which are given under each example. The code kits are MIT. See [LICENSE.md](LICENSE.md).

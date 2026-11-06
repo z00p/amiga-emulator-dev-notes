@@ -70,6 +70,9 @@ One line per pitfall, with the lesson that explains it. Read the lesson before a
 - Before removing something that exists for the picture (a double buffer), get an A/B by eye on the player's display chain: good timing figures did not mean smooth scrolling. ([A faster path is not a better one until someone has looked at it](05-input.md#a-faster-path-is-not-a-better-one-until-someone-has-looked-at-it))
 - Start each emulated frame at the guest's vblank line, so the game's pad read comes first and its result is drawn in the same frame. ([Start the emulated frame at the guest's vertical blank, not at its line 0](05-input.md#start-the-emulated-frame-at-the-guests-vertical-blank-not-at-its-line-0))
 - On a machine with time to spare, start the frame late (the slowest recent frame plus a margin before the next vblank) and read the pad again first. ([On a fast machine, start the frame late and read the pad again first](05-input.md#on-a-fast-machine-start-the-frame-late-and-read-the-pad-again-first))
+- Do not trust lowlevel.library's `ReadJoyPort()` for CD32 pads on a fast CPU (on a PiStorm it only ever reported red). Read the pad yourself, with every wait made of CIA reads. ([lowlevel.library only reported red on the PiStorm](05-input.md#lowlevellibrary-only-reported-red-on-the-pistorm); [kits/cd32pad](../kits/cd32pad/README.md))
+- An emulator whose frame is a fixed cycle count from power on can lose a whole frame of lag to where that boundary falls in the game's frame. Measure the game's answer in whole frames, not only the host's time, and end the frame at the machine's VSYNC. ([End the frame at the machine's VSYNC](05-input.md#end-the-frame-at-the-machines-vsync))
+- Give A/B builds neutral names (Preset A, Preset B) and ask one question; a name like "LateOff" steers the answer. ([Ask the tester the right question](05-input.md#ask-the-tester-the-right-question))
 
 ## Testing
 
@@ -114,6 +117,7 @@ One line per pitfall, with the lesson that explains it. Read the lesson before a
 - Do not put `&` inside a command an agent already runs in the background: the subshell outlives the task, and a rerun then shares its slots and log. ([A subshell sent to the background keeps running after its task "finishes"](08-agent-workflow.md#a-subshell-sent-to-the-background-keeps-running-after-its-task-finishes))
 - When the speed rows say "slow" but not why, count each redraw at the decision that causes it, then dump the guest's video memory to a file and read it on the PC. ([When the rows say "slow" but not why: probe counters, then a state dump](06-testing.md#when-the-rows-say-slow-but-not-why-probe-counters-then-a-state-dump))
 - Look at one grab before trusting a comparison of grabs: two grabs of the wrong screen match perfectly. ([A grab of the wrong screen compares equal](06-testing.md#a-grab-of-the-wrong-screen-compares-equal))
+- After any change to what a save state holds, run resume, round trip, "saving is invisible", refusals and fuzz checks, and load states across releases in both directions. ([Five checks, run headless on every change to the machine state](06-testing.md#five-checks-run-headless-on-every-change-to-the-machine-state))
 
 ## Sound and performance
 

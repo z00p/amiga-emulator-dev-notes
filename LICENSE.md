@@ -8,4 +8,6 @@
 - **Arnold for the Amiga** excerpts: GNU General Public License v2.0 (GPL-2.0), as Arnold by Kevin Thacker on which the port is based.
 - **AmiPCEngine** excerpts: AmiPCEngine is freeware by Juan Antonio Gómez Gálvez (GUS Entertainment) and z00p. The excerpts are quoted here with permission, for teaching; they are not relicensed.
 
+**Code kits** (`kits/`): MIT licence, given in each kit's own `LICENSE` file. They may be used in any program, unlike the excerpts above.
+
 Small illustrative snippets written for these notes (not taken from any of the projects) are CC0.

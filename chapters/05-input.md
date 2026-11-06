@@ -1,6 +1,6 @@
 # Input
 
-*Reading notes.* The examples come from AmiMSX, which takes over the machine while the MSX runs. It reads the joystick ports and the keyboard through the custom chips and the CIAs and never goes through the operating system's input handling, so it has to implement the CD32 pad protocol itself. Commit references name the AmiMSX development repository; the public repository carries squashed commits.
+*Reading notes.* The examples come from AmiMSX, which takes over the machine while the MSX runs. It reads the joystick ports and the keyboard through the custom chips and the CIAs and never goes through the operating system's input handling, so it has to implement the CD32 pad protocol itself. Arnold, which runs with the operating system, reads the pads in the same way from C (see "CD32 pads from C"), and both reads are in an MIT-licensed kit, [kits/cd32pad](../kits/cd32pad/README.md). Commit references name the development repositories; the public repositories carry squashed commits.
 
 ## Reading CD32 pads without the stack
 
@@ -130,6 +130,63 @@ CD32Ok2:
 **Why.** A real CD32 pad cannot report red, blue, yellow, green, both shoulders and play all pressed at once, so that pattern is a signature of "not a CD32 pad", and it can be used to reject it without the identification bits. The plain two-button read still runs, so the pad keeps working as a joystick.
 
 **Evidence.** Found when a plain pad was tried on a port set to CD32 pad. No measurement was recorded beyond the code review. **Look up:** commit 6530efb.
+
+## CD32 pads from C, with the operating system running (Arnold)
+
+*Arnold.* Arnold runs as an ordinary AmigaOS program, so it could have left the pads to lowlevel.library. On a PiStorm that did not work. Arnold now reads the pad itself, using the same protocol as AmiMSX. Both reads are in a standalone kit under an MIT licence: [kits/cd32pad](../kits/cd32pad/README.md).
+
+### lowlevel.library only reported red on the PiStorm
+
+**Problem.** On the PiStorm A1200 with a KTRL CD32 pad, `ReadJoyPort()` reported the pad as a game controller, but only the red button ever showed as pressed. Blue, yellow, green, the shoulders and play did nothing.
+
+**Before** (`amiga_sys.c`, Arnold development before 1.0):
+
+    for (port = 1; port < 4; port++) {
+        ULONG v = ReadJoyPort(port);
+        ULONG type = v & JP_TYPE_MASK;
+        ...
+        if (v & JPF_BUTTON_RED) m |= SYS_JOY_FIRE1;
+        if (v & (JPF_BUTTON_BLUE | JPF_BUTTON_GREEN | JPF_BUTTON_YELLOW)) m |= SYS_JOY_FIRE2;
+        ...
+
+*Source: Arnold-m68k development before 1.0, `arnold/src/amiga/amiga_sys.c` (GPL-2.0, derived from Kevin Thacker's Arnold).*
+
+**After** (commits 5558bc9, 29f07cf; now in `amiga_joy.c`): the buttons are read by hand, with interrupts off, and every wait is a run of CIA reads:
+
+    Disable();
+    *pra |= 0x80;                  /* clock high first... */
+    *ddra |= 0x80;                 /* ...then port 2 fire line as an output */
+    for (d = 0; d < 4; d++) dummy = *pra;
+    custom.potgo = 0x6f00;         /* port 2: pin 5 output low (CD32 mode), pin 9 input */
+    for (d = 0; d < 25; d++) dummy = *pra;
+    for (i = 0; i < 9; i++) {
+        for (d = 0; d < 10; d++) dummy = *pra;
+        if (!(custom.potinp & 0x4000)) bits |= 1u << i;
+        *pra &= ~0x80;             /* clock pulse: next bit */
+        for (d = 0; d < 4; d++) dummy = *pra;
+        *pra |= 0x80;
+    }
+    *ddra &= ~0x80;                /* fire line back to input */
+    custom.potgo = 0xff00;         /* pin 5 high again: 2-button mode */
+    Enable();
+
+*Source: Arnold-m68k 1.7, `arnold/src/amiga/amiga_joy.c` (GPL-2.0); the same routine, for both ports, is in the MIT kit.*
+
+The directions still come from `JOY1DAT`. Red is fire 1, and blue, yellow and green are fire 2. Whether a port has a CD32 pad is a menu option (`PAD=` argument, ToolType and preference), as in AmiMSX 4.1.1.
+
+**Why.** A real pad's shift register needs time between clock edges. A routine whose delays are CPU instructions gets them right on the machine it was written for and too short on a CPU that runs 10 to 50 times faster. A read of a CIA register takes one E-clock (about 1.4 microseconds) on any CPU, because the CIA is on the real Amiga bus, so a wait made of CIA reads is the same length on a 68000 and on a PiStorm. Red survives the fast read because it is the plain-mode fire line, which is valid before any clocking starts.
+
+**Evidence.** Arnold's `padtest` Shell tool (commit 564e69c) showed the hardware bits, lowlevel.library's value and the hand read side by side. With the KTRL pad, lowlevel.library showed red only, and the hand read showed all seven buttons and the ID bits. The first hand read still decided CD32 or not from lowlevel.library's controller type. Two days later that was dropped for the menu option, after a plain joystick read as a CD32 pad lost its fire button.
+
+**Look up.** Commits 5558bc9, 29f07cf, 564e69c; `read_cd32_buttons`, `padtest.c`.
+
+### Notes from three projects
+
+- **Read once or twice a frame.** Old snippets say a vertical blank must pass between two reads. In practice that is not needed. AmiPCEngine 1.4 reads the pad twice a frame on RTG: once at the vertical blank, and again just before it emulates the frame, to cut lag (see [On a fast machine, start the frame late and read the pad again first](#on-a-fast-machine-start-the-frame-late-and-read-the-pad-again-first)). This has caused no trouble with real pads on CD32 adapters.
+- **Adapters send Start as play.** Use play for the console's Start or Run button. AmiPCEngine takes both shoulder buttons together as "back to the menu".
+- **The latch wait.** AmiMSX waits about 300 microseconds for pin 5 to fall before the first bit. Arnold waits about 50 microseconds. Both work with the pads above. If a pad or adapter loses the first button (blue), lengthen the wait.
+- **The asm kit routine pushes three registers.** That is fine in most programs. In one like AmiMSX, where interrupts run on a borrowed A7, keep them in memory (see "No stack here" above).
+- **Directions in a nibble swap.** AmiPCEngine's first CD32 mapping put the d-pad into the buttons and the buttons into the d-pad. The bit order of the read is easy to mislabel, so test each button with a raw-bits tool (the kit's `cd32test`) before you map them.
 
 ## Keyboard mapping
 
@@ -464,3 +521,157 @@ Lag is the time from a stick movement to the first picture that shows the game's
 ### Lag outside the emulator
 
 These add more than any of the above, and only the player can change them: the TV's game mode on the HDMI input; Paula by cable rather than HDMI sound through a Bluetooth link; wired or 2.4 GHz pads rather than Bluetooth ones. Say so in the documentation, so players do not chase a frame in the emulator while losing three in the TV.
+
+## Controller lag: the frame boundary and a late start (Arnold)
+
+*Arnold.* The same question as the two sections above, for a C emulator that runs with the operating system. This work is for Arnold 1.8 (in development).
+
+Arnold splits lag into five parts:
+
+1. **The wait for the sample.** The host reads the pad once a frame, so a press waits up to a frame (10 ms on average) before anyone sees it. A real machine has the same wait before the game's own read.
+2. **The game's own frames.** Many games read the stick in one frame and draw the answer in the next. That belongs to the game, and the emulator must keep it.
+3. **The emulator's frame boundary.** If the emulator's frame ends in the wrong place, the answer can miss a picture and wait a whole extra frame. This part is the emulator's fault, and it can be removed.
+4. **Emulation and presentation.** The time from the sample to the picture on the output: the emulation of the frame, the conversion, and the wait for the blank at which the picture goes up.
+5. **The TV.** Use game mode. HDMI sound sent to a Bluetooth speaker arrives late, but that does not delay the picture.
+
+### The host's time from sample to picture, and the game's frames
+
+**Problem.** "It feels laggy" does not say which of the five parts to work on. And a host timing alone missed the biggest cut, the frame boundary, because that cut does not change the host's time from sample to picture at all.
+
+**Before.** No figures. The stick was read once a frame, after the 50 Hz wait, and the whole frame was emulated with that value.
+
+**After** (`amiga_sys.c`, switch `NO_LAGLOG` to remove). There are two measures.
+
+The first is a host log. The sample time goes with the frame as a tag through the RTG layer. The vertical blank task records the tag and the time at which it writes that frame, which is when the picture goes up. The next sample collects it:
+
+    void Sys_LagSample(void)
+    {
+        unsigned long now = Sys_Micros();
+        if (Sys_RtgActive) {
+            uint32_t tag, wr, n = rtg_x_lag_last(&tag, &wr);
+            if (n != lag_seq) { lag_seq = n; if (tag) lag_add(wr - tag); }
+        }
+        ...
+        lag_ts = now;
+    }
+    ...
+    rtg_x_lag_tag(lag_ts);              /* just before rtg_present() */
+    e = rtg_present(chunky, pitch, ...);
+
+*Source: Arnold-m68k 1.8 development, `arnold/src/amiga/amiga_sys.c` (GPL-2.0), calling rtgfw (MIT).*
+
+On AGA the figure comes from the beam line of the flip plus the lines left to the vertical blank. The log prints the average, minimum and maximum, and how many frames missed the blank they were made for. The cost is one E-clock read a frame and a semaphore pair in the vertical blank task.
+
+The second measure is the game's frames, counted headless on a PC. Run a key script with and without one press at frame F, and find the first picture that differs. "1 unit" means the answer is in the first picture after the sample, the best possible with one sample a frame. A test-only build switch (`LAGTRACE`) also prints, for each frame, where the frame cut fell against the machine's VSYNC and when the game read the stick.
+
+**Why.** The two measures see different parts. The host log sees part 4, which is real time on the real machine. The headless count sees parts 2 and 3, in whole frames, and is exactly repeatable.
+
+**Evidence.** On the A1200, Sonic GX in a fast vertical scroll, 45 s runs:
+
+| Output | Sample to picture, average (ms) |
+|---|---|
+| RTG, HDMI sound, frames locked to the HDMI blank | 19.2 to 19.3 |
+| The same, with the late start (below) | 15.2 to 15.6 |
+| RTG, Paula sound, not locked | 18.8 (6 to 32, swinging with the 49.93/50 Hz beat) |
+| AGA, Paula sound | 23.5 |
+
+Headless, 1 to 3 units from the sample to the first changed picture. One of those frames was often the emulator's (next lesson).
+
+**Look up.** `Sys_LagSample`, `rtg_x_lag_tag`, `rtg_x_lag_last`; `tools/lag18/lagtest.py`; notes `Docs/agent_notes/lag18.md`.
+
+### End the frame at the machine's VSYNC
+
+This is the CPC counterpart of AmiPCEngine's frame that starts at the guest's vertical blank (above). Arnold keeps the frame length fixed and moves the boundary once instead of reordering the lines.
+
+**Problem.** Sonic GX and Puzzle Bobble answered a press one frame later than Ghosts 'n Goblins, and in a fast scroll the top band of Sonic's picture was one frame newer than the rest.
+
+**Before** (`arnold.c`, Arnold 1.7). Each emulated frame is 19968 cycles (312 lines of 64 µs), counted from power on. The frame boundary is not tied to the CPC's VSYNC, so where it falls in the game's frame depends on how the game set up the video chip: 60 lines after the VSYNC in Sonic GX, 65 in Puzzle Bobble, 253 in Ghosts 'n Goblins.
+
+**After** (commit 01a84b2, switch `NO_VSYNCCUT`, run-time `VSYNCCUT=0`). Frames stay 19968 cycles. If the boundary has been away from the VSYNC for two frames in the same place, one frame is made shorter, or longer, so that the next boundary falls 32 cycles after the VSYNC:
+
+    static int Vcut_FrameLength(void)
+    {
+        CRTC_INTERNAL_STATE *s = CRTC_GetInternalState();
+        int e = s->Monitor_State.MonitorScanLineCount * 64 + s->Monitor_State.MonitorHorizontalCount;
+        int prev = VcutPrevE, L;
+        VcutPrevE = e;
+        if (e < VCUT_AFTER || e > NOPS_PER_MONITOR_SCREEN - VCUT_BEFORE) return NOPS_PER_MONITOR_SCREEN;   /* at the VSYNC */
+        if (prev < 0 || e - prev > 128 || prev - e > 128) return NOPS_PER_MONITOR_SCREEN;   /* not steady yet */
+        L = NOPS_PER_MONITOR_SCREEN - e + VCUT_T;
+        if (L < NOPS_PER_MONITOR_SCREEN / 2) L += NOPS_PER_MONITOR_SCREEN;
+        VcutPrevE = -1;
+        CPC_VcutShifts++;
+        return L;
+    }
+
+*Source: Arnold-m68k 1.8 development, `arnold/src/cpc/arnold.c` (GPL-2.0, derived from Kevin Thacker's Arnold).*
+
+The sound stays on the old fixed grid of 19968-cycle points through a host hook, so the sound blocks and the emulated machine at each old boundary are unchanged. A host that does not set the hook gets the old boundary. The Amiga host waits once per sound block, not once per frame, so the frame that moves the boundary (0 or 2 blocks long) keeps the pace.
+
+**Why.** Puzzle Bobble reads the stick at the VSYNC and draws the answer 198 lines later. A boundary at line 65 falls between the two, so the answer lands in the next picture. Sonic GX reads at line 51 and moves its sprite in the next frame, and the boundary at line 60 split that frame across two pictures. Ghosts 'n Goblins reads at the VSYNC and its boundary was late, so it lost nothing. With the boundary at the VSYNC, every picture is also one whole frame of the machine, and the seam is gone.
+
+**Evidence.**
+- Headless, first changed picture: Sonic GX 2 units to 1, Puzzle Bobble 2 to 1, Ghosts 'n Goblins 1 to 1.
+- Exactness: with the cut off (`NOVCUT=1` in the headless host), every frame checksum and the sound equal 1.7's. With the cut on and the key script applied at the old grid, the CPU cycle count, all Z80 registers and a hash of the 64 KB RAM equal 1.7's at every grid point over 900 to 2400 frames of four games.
+- The seam: every 1.7 picture of a Sonic GX scroll was the top of the new frame k+1 over the bottom of frame k, cut at row 28, in 19 frames of 19.
+- On the A1200, a tester's feel test: "much more responsive".
+
+**What it cost.**
+- Every key-script baseline with presses changed once, because a press now reaches the CPU at the new boundary. Of 207 headless checks, 108 were unchanged, 13 changed because only the cut moved, and 86 changed because the cut moved and the presses arrived at a different time. None was unexplained.
+- On the A1200, one late frame and one skipped frame per run, at the screen changes where the boundary moves.
+- A save state needs two more values. Older states load into the new build exactly.
+
+**Look up.** Commit 01a84b2; `Vcut_FrameLength`, `CPC_AudioFrameHook`; headless `NOVCUT`, `GRIDSTATE`, `KEYGRID`, `FRAMEDUMP`; `tools/lag18/vc_proof.sh`, `splice.py`.
+
+### Start the frame late, by the measured work (RTG, locked to the blank)
+
+The same adaptive late start as AmiPCEngine's (above), in C, timed in microseconds from the E-clock, and placed against the HDMI blank that Arnold's RTG output is locked to.
+
+**Problem.** With RTG frames locked to the HDMI blank, each frame started 0.5 ms after a blank. The frame took 9 to 14 ms to emulate and present, so the picture waited several milliseconds for the next blank, and the stick sample was that much older than it needed to be.
+
+**Before** (Arnold 1.7). Each frame is due `SYS_LOCK_US` (500 µs) after a blank.
+
+**After** (switch `NO_LATESTART`, preference `lsmargin=`, argument `LSMARGIN=`; 0 turns it off). The start moves later, to the period minus the slowest work of the last 32 frames minus a margin (4 ms by default):
+
+    static long ls_next(long per)
+    {
+        long cur = ls_off ? ls_off : SYS_LOCK_US, tgt = SYS_LOCK_US;
+        ls_per = per;
+        if (ls_hold) ls_hold--;
+        else if (Sys_LateMarginUs > 0 && ls_wn >= LS_WIN) {
+            unsigned long mx = 0; int i;
+            for (i = 0; i < LS_WIN; i++) if (ls_work[i] > mx) mx = ls_work[i];
+            tgt = per - (long)mx - Sys_LateMarginUs;
+            if (tgt < SYS_LOCK_US) tgt = SYS_LOCK_US;
+            if (tgt > per - 2000) tgt = per - 2000;
+        }
+        if (tgt > cur + 500) tgt = cur + 500;
+        ls_off = tgt;
+        ...
+        return tgt;
+    }
+
+*Source: Arnold-m68k 1.8 development, `arnold/src/amiga/amiga_sys.c` (GPL-2.0).*
+
+"Work" is the time from the sample to `rtg_present`. The start moves later by at most 0.5 ms a frame and earlier at once. A frame that presents within 0.3 ms of its blank puts the start back to 0.5 ms for 50 frames (a "hold"). When the start moves, the due time moves by exactly the difference, so it can never slip to another blank. AGA, and RTG without the lock, are not touched.
+
+**Why.** The picture can only go up at a blank, so any time between the end of the work and that blank is wasted. Spending it before the sample instead makes the sample newer by the same amount. Taking the slowest recent frame, not the average, keeps the picture on its blank when the game has a heavy frame.
+
+**Evidence.** On the A1200 (Sonic GX scroll, two runs each): average sample to picture 19.30 and 19.18 ms without it, 15.19 and 15.59 ms with it. No frame missed its blank with the late start; without it, one run had 5 late frames. In a blind A/B on the real machine (presets labelled A and B), the tester found both responsive, with "maybe B had the edge". B was the late start.
+
+**Look up.** `ls_next`, `ls_present`; perf lines `latestart_*`; notes `Docs/agent_notes/lag18.md`, "Late start".
+
+### Ask the tester the right question
+
+**Problem.** After the first feel test, the tester wrote "Late off". That could mean "the build with the late start off felt better" or "I tested the build called LateOff". A photo of the drawer did not settle it.
+
+**After.** A blind A/B: the same build twice, as two icons named "Preset A" and "Preset B", one with each setting. The tester was not told which was which and was asked one question: which felt more responsive, or neither?
+
+**Why.** A difference of 4 ms is near the limit of what anyone can feel, so the result is easily swayed by a name like "LateOff". Neutral names remove that, and a one-line question gets a one-line answer.
+
+**Evidence.** The blind result (both responsive, a slight edge to the late start) overrode the first impression, and the late start stayed on by default.
+
+### What is left
+
+- **Read the stick at the game's own read.** The game reads the joystick part-way through the emulated frame, but sees the value sampled at the frame start. Asking the host for a fresh value at that read would save the time from the frame start to the read: in Sonic GX nearly all the work time, 9 to 12 ms on RTG and up to about 20 ms on AGA. It is the only cut left on AGA, where the frames are too full to start later. Not measured yet.
+- **Fewer RTG anchors.** A re-anchor to the HDMI blank can spin for a whole period. That gave the one 38.6 ms maximum in the measurements above.
