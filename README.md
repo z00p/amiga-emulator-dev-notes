@@ -29,8 +29,6 @@ Each lesson shows real code **before and after** a fix, the symptom it caused, a
 | 11 | [The test machine: an OS 3.2.3 PiStorm A1200](chapters/11-test-machine.md) | A1200 setup notes |
 | 12 | [RTG output](chapters/12-rtg.md) | Arnold (rtgfw, MIT), AmiPCEngine |
 
-Sections marked *To be written* are placeholders for the other project's material.
-
 ## Code kits
 
 Small routines taken out of the projects so they can be used on their own, under the MIT licence:

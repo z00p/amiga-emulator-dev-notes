@@ -359,7 +359,7 @@ CEPOLL:	MACRO				; in each S#2 read handler, D1 only
 	ENDM
 ```
 
-*Source: AmiMSX 4.3 (development), AmiMSX_Main_v3.1.asm (freeware by Juan Antonio GÃ³mez GÃ¡lvez; 4.x changes; used with permission).*
+*Source: AmiMSX 4.3 (development), AmiMSX_Main_v3.1.asm (freeware by Juan Antonio Gómez Gálvez; 4.x changes; used with permission).*
 
 **Why.** Games pace their own mid-frame work on the video chip's busy flag, so "instant" is a timing change, not a speed-up. The model costs nothing per line: the end time is computed once when the command starts and only compared when a game reads the status register. The costs come from the reference emulator's per-access timing (VDP cycles, 1368 a line): 48 a byte for a fill (HMMV), 88 for a byte copy (HMMM), 64 for YMMM, 96 a dot for a logical fill, 120 for a logical copy, 112 a dot plus 32 a minor step for LINE, plus 56 to 64 a row. Inside the display window the chip gets fewer memory slots: the model multiplies by 3/2 with sprites on and 5/4 with them off. The time is walked through display and blank segments, so a long command can end frames later.
 
@@ -406,7 +406,7 @@ INSDD:	...
 
 `NOCO` charges the prefix as a 4-cycle NOP (plus its M1 wait) and re-dispatches the opcode, as the table already did for every other plain opcode.
 
-*Source: AmiMSX 4.3 (development), AmiMSX_Main_v3.1.asm (freeware by Juan Antonio GÃ³mez GÃ¡lvez; 4.x changes; used with permission).*
+*Source: AmiMSX 4.3 (development), AmiMSX_Main_v3.1.asm (freeware by Juan Antonio Gómez Gálvez; 4.x changes; used with permission).*
 
 **Why.** Both bugs are invisible when you read the handler (the right macro is there) and only show up when you measure. A macro with an empty argument assembles quietly in Devpac mode.
 
