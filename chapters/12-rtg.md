@@ -249,14 +249,17 @@ Blended in 32-bit is faster than in 16-bit even with twice the bytes: RGB565PC n
 
 A 50 Hz HDMI output removes the judder. On the test machine the Pi's `config.txt` now uses the Emu68 Imager's 1080p50 entry (`hdmi_group=1`, `hdmi_mode=31`), with `disable_overscan=1`. It affects Workbench and everything else. 60 Hz games then drop one frame in six instead. The vblank-timed writes measured the new 20 ms period by themselves.
 
-## What a second emulator needs (AmiMSX)
+## What AmiMSX did instead: RTG inside a takeover emulator (AmiMSX)
 
-AmiMSX, a takeover emulator that races the beam, would follow Arnold with a longer list, none of it framework work except the first two lines:
+*AmiMSX.* An earlier version of this section planned AmiMSX's RTG the Arnold way: an OS-alive play loop, a chunky renderer per mode, palettes as CLUT banks, the display code as a library. AmiMSX 4.5 shipped RTG without any of that, and the takeover stayed. It is an alternative for an emulator that owns the machine:
 
-- **An OS-alive play loop.** No `COP1LC`, `BPLxPT`, `BEAMCON0`, `DMACON` display bits or `INTENA` takeover; interrupts stay on; exec vectors only through `AddIntServer` / `SetIntVector`; wait with `timer.device`. `rtg_present` and `rtg_wait_frame` are task-context only (not from a level-3 handler or the CPU core). This is the biggest change.
-- **A chunky renderer per VDP mode** (and software sprites in each line) replacing the beam-bound display code. It also removes a whole class of "page switch shown a frame late" bugs, since the frame is complete before it is shown.
-- **Palettes as banks.** MSX has at most 7 palettes of 16 colours a frame (an event applies from the next line), so index = 16 x bank + colour fits 256 entries; with even/odd bank sets (2 x 7 x 16) a new frame's CLUT load never changes colours the shown frame still uses. SCREEN 8 over SCREEN 5 needs 256 + 16 entries and a 16-bit run at the split line; YJK modes need a direct 16-bit line input.
-- **The module form.** A LoadSeg-able library with a register-ABI jump table suits vasm. It is designed but not built.
+- **Open the screen before the takeover, then never call the OS in play.** With the OS still running, the program opens the Picasso96 screen, locks its bitmap briefly and keeps the address. In play each MSX frame is written straight into that memory. There are no OS calls, no flips and no palette loads.
+- **A 16 or 32-bit screen with the emulator's own colour lookup** instead of an 8-bit CLUT. Palette changes during the frame come from the same line events the AGA copper list is built from, through our own lookup, so the palette-bank scheme planned above was not needed.
+- **Only the modes that have an RTG renderer.** RTG covers the common modes; the choice is made per frame (`RtgUse`), and a frame in any other mode is drawn on AGA as before. Players with both outputs connected (HDMI from the PiStorm, AGA through a scaler) see that frame on the AGA display.
+- **Pacing stays on the native chipset.** The AGA display still runs under an RTG screen, so the emulator keeps its copper-interrupt tick as the frame clock, at a fixed beam line of the native display (about line 193 on the PiStorm A1200 in RTG mode, line 258 on AGA). This is the takeover version of Arnold's rule above: the master clock is the Amiga's own, never the RTG refresh. The E-clock is not needed, because no task wait is involved.
+- **One buffer, written as soon as the frame is emulated** (4.7, chapter 05). With no flip there is nothing to wait for. In the A/B by eye on the PiStorm's HDMI output, asked to look for tearing, the player did not report any.
+
+**Evidence.** PiStorm A1200, RTG over HDMI, the player's timing log (4.7 build): from the input read to the end of the drawing 50 beam lines median, 99th percentile 9 ms. At the median, the emulation and the drawing together take about a sixth of the frame. **Look up.** `AmiMSX_Rtg_v4.asm` (header and `RtgUse`); notes `Docs/agent_notes/v45_rtg.md`.
 
 ## A takeover emulator on RTG (AmiPCEngine)
 
