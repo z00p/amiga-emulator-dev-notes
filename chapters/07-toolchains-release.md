@@ -110,6 +110,41 @@ Every debug aid is chosen on the vasm command line (`-DTRACE=1`, `-DPERF=1`, `-D
 
 **Why.** A BSS section has a size and no contents in the executable, so the file's data never reaches the program. **Evidence.** With the ROM in a DATA section the title screen renders correctly. **Look up.** AmiPCEngine commit 1d703ca.
 
+### Big buffers belong in a BSS section, not among the code
+
+The other side of the lesson above. A debug build of AmiPCEngine kept two 67 KB snapshots of the guest's video state (chapter 06, "When the rows say "slow" but not why"). With the `DS.B` lines next to the code that fills them, the assembly stopped with branch-out-of-range errors: 137 KB now sat between short branches and their targets. In a code or data section, `DS` is real space in the file too.
+
+**After** (AmiPCEngine commit 3384ec0): the buffers moved to the BSS section that already held the emulator's tables, inside the build switch.
+
+	SECTION	Tablas,BSS
+	...
+	IFNE	DbgProbe
+	PrbSnapA:	DS.B	PrbSnapLen	; DbgProbeScan's snapshots (DbgRows.asm)
+	PrbSnapB:	DS.B	PrbSnapLen
+	ENDC
+
+*Source: AmiPCEngine 1.4 development, src/Main.asm (freeware by Juan Antonio Gómez Gálvez and z00p; used with permission).*
+
+**Rule.** Zeroed space goes in BSS, data that must be loaded goes in DATA, and only code and small constants sit among the code.
+
+### A build stamp the script writes goes stale when you call the assembler yourself
+
+**Problem.** A tester's photo of the menu showed a test build stamped 985f569+. The binary was db36ef2, byte for byte.
+
+**Why.** The stamp is not in the source. `build.sh` writes it to an include file (not in git) before it runs vasm, with the date, the commit, and a `+` if the source has changes:
+
+	printf "	DC.B	'AmiPC-Engine Emulator v1.0  -  test build %s (%s)',0\n" \
+	  "$(date +%d.%m.%Y)" \
+	  "$(git rev-parse --short HEAD)$(git diff --quiet HEAD -- src || echo +)" > src/buildinfo.i
+
+*Source: AmiPCEngine 1.4 development, build.sh (freeware by Juan Antonio Gómez Gálvez and z00p; used with permission).*
+
+That test build was assembled by calling vasm directly, for a quick set of variants, so the include still held the stamp from an earlier `build.sh` run. Nothing failed. The stamp just named the wrong build, and a stamp exists so that a photo can say which build was run.
+
+**Rule.** Build anything that goes to a tester through the script, or have every way of building write the stamp. When a stamp and a binary disagree, compare the bytes (`cmp`) with a fresh build of the commit before trusting either.
+
+**Look up.** `build.sh`, `src/buildinfo.i`; compare AmiMSX's `tools/buildid.sh` (first lesson in this chapter).
+
 ## amiga-gcc
 
 *Arnold.* Arnold is written in C and built with gcc 6.5 from the amiga-gcc toolchain, running under a Linux environment (WSL) on the PC. The 68k assembler tools of the AmiMSX chapters are not used.
