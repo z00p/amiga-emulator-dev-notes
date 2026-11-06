@@ -312,7 +312,7 @@ The logic (preset table, parsing and printing of pairs, Amiga and CPC key names,
 
 ## Cutting input lag (AmiPCEngine)
 
-*AmiPCEngine.* An emulator adds lag on top of the game's own: the pad is read once, the guest frame that uses it is emulated, and the picture is copied to the screen. On a PC Engine game, a press reached the screen two to three frames late (40 to 60 ms at 50 Hz). About two of those frames were the emulator's. The two lessons below took most of that back, each behind its own switch. On the A1200 (PiStorm), a tester's verdict on R-Type with a CD32 pad was "feels very responsive".
+*AmiPCEngine.* An emulator adds lag on top of the game's own: the pad is read once, the guest frame that uses it is emulated, and the picture is copied to the screen. On a PC Engine game, a press reached the screen two to three frames late (40 to 60 ms at 50 Hz), and reading the code suggested about two of those frames were the emulator's. The two lessons below took back one whole frame (measured) and then 11 to 14 ms more on RTG, each behind its own switch. On the A1200 (PiStorm), a tester's verdict on R-Type with a CD32 pad was "feels very responsive".
 
 ### Start the emulated frame at the guest's vertical blank, not at its line 0
 
@@ -350,11 +350,13 @@ The logic (preset table, parsing and printing of pairs, Amiga and CPC key names,
 
 *Source: AmiPCEngine 1.4 development, src/PCE.asm (freeware by Juan Antonio Gómez Gálvez and z00p; used with permission).*
 
-**Why.** One emulated frame is now the vblank lines of guest frame N-1 followed by the picture lines of frame N. The game's vblank handler runs first and reads the pad sampled at this Amiga vblank, and the picture it then draws is finished in the same emulated frame. That saves one whole frame, with no extra work: the same lines run, in a different order. The work is in moving everything that was keyed to "the start of the emulated frame" to the place where the guest frame wraps (`PCE_FrameTop`). That means the copy of the sprite table the frame shows, the start of the per-line scroll and colour logs, the scripted test input, and the sound samples filed by line. Anything you forget shows up as a one-frame shift against the reference emulator. That is why every scripted comparison was rerun.
+**Why.** One emulated frame is now the vblank lines of guest frame N-1 followed by the picture lines of frame N. The game's vblank handler runs first and reads the pad sampled at this Amiga vblank, so whatever it changes is in the next emulated frame's picture, one frame sooner than before. That saves one whole frame, with no extra work: the same lines run, in a different order. The work is in moving everything that was keyed to "the start of the emulated frame" to the place where the guest frame wraps (`PCE_FrameTop`). That means the copy of the sprite table the frame shows, the start of the per-line scroll and colour logs, the scripted test input, and the sound samples filed by line. Anything you forget shows up as a one-frame shift against the reference emulator. That is why every scripted comparison was rerun.
 
-**Evidence.** WinUAE regressions: 69 of 69 titles on RTG and on AGA, memory guards clean, stack use unchanged. On the A1200, vblanks for the same 2400 frames (1500 for Soldier Blade) moved within noise: Parodius 2602 to 2603, Soldier Blade 1649 to 1655, Street Fighter II' 2430 to 2437. With the switch set to 1 the binary is the 1.3 release byte for byte.
+**Evidence.** Press to picture, WinUAE, RTG. A test switch applies a scripted press where the real pad is read (in the Amiga vblank interrupt), and a sum of every composed frame over 64 frames is compared between a run with the press and one without. Taking P as the first emulated frame that can use the press, the first changed picture is P+1 with the switch and P+2 without it, in all three titles tried: R-Type in play, Parodius in play and Soldier Blade's attract mode. Every pair is identical before the press. The frame that is left looks like the games' own (they read the pad in their vblank and the change shows the frame after), but it was not checked against the reference.
 
-**Look up.** Commit 529f488; switch `NO_VBLUNIT`; `PCE_FrameTop`, `UnitStart`; notes `docs/agent_notes/lag.md`.
+WinUAE regressions: 69 of 69 titles on RTG and on AGA, memory guards clean, stack use unchanged. On the A1200, vblanks for the same 2400 frames (1500 for Soldier Blade) moved within noise: Parodius 2602 to 2603, Soldier Blade 1649 to 1655, Street Fighter II' 2430 to 2437. With the switch set to 1 the binary is the 1.3 release byte for byte.
+
+**Look up.** Commit 529f488; switch `NO_VBLUNIT`; `PCE_FrameTop`, `UnitStart`; the press test: commit a8f3975, switches `AutoPressHost`, `RtgSumFrom`, `tools/lagrun.sh`, `tools/lagcmp.py`; notes `docs/agent_notes/lag.md`.
 
 ### On a fast machine, start the frame late and read the pad again first
 
