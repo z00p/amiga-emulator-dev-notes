@@ -28,7 +28,7 @@ Each lesson shows real code **before and after** a fix, the symptom it caused, a
 | 08 | [Agent workflow](chapters/08-agent-workflow.md) | both |
 | 09 | [Pitfalls checklist](chapters/09-pitfalls.md) | all three |
 | 10 | [Performance on Emu68](chapters/10-performance-emu68.md) | Arnold, AmiPCEngine |
-| 11 | [The test machine: an OS 3.2.3 PiStorm A1200](chapters/11-test-machine.md) | A1200 setup notes |
+| 11 | [Testing on the real A1200: the machine and its tools](chapters/11-test-machine.md) | A1200 setup notes (3D game-port lessons are in the appendix) |
 | 12 | [RTG output](chapters/12-rtg.md) | Arnold (rtgfw, MIT), AmiPCEngine |
 
 ## Code kits
