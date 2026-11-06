@@ -18,6 +18,16 @@ Two consequences for anyone porting an emulator:
 - **Do not carry optimisations across CPUs on instruction counts.** An x86 profile of Arnold (callgrind) cut the Plus sprite merge by 36% in instructions and the PiStorm run came out slower (chapter 10). Use the x86 profile to find what is hot, and the real machine to decide whether a change helps.
 - **Keep an exact path.** Because speed work changes code layout and timing, every change in Arnold sits behind a `NO_x` switch that restores the old behaviour byte for byte (chapter 06), so a correctness check never depends on the speed of the machine.
 
+*AmiMSX.* A different shape of emulator gives a different picture of the same machines. AmiMSX is 68k assembly that takes the machine over. On AGA it draws the MSX tiles straight into bitplanes (blitter and CPU, only what changed since the last frame), so there is no chunky picture and no c2p. Its cost per frame is the tiles and sprites that changed, not the screen size.
+
+| | PiStorm (Emu68) | 68030/50 | BigMig |
+|---|---|---|---|
+| AmiMSX figures | the player's timing logs (A1200) | WinUAE's 68030 config only; no real 68030/50 timed | measured on the machine (4.0) |
+| SCREEN 4 scrolling game, AGA render | Space Manbow, live drawing: 76 beam lines median, 163 at the 99th percentile (6 of 728 frames late) | Lilly's Saga at 87% of full speed (72% with the software sound mix) | 120 to 140 lines from about line 252, so the drawing lands partly in the next frame |
+| RTG, input read to end of drawing | 50 lines median (3 ms), 99th percentile 9 ms | not measured | not measured |
+
+What carries over to other projects: on the fast machines the frame's work is short, and the time goes in *when* it is done, not in doing it (chapter 05, controller lag). On the BigMig the drawing still crosses the frame start, which is why the double buffer exists (chapter 02). Presets per machine (chapter 07) keep the 68030 away from features it cannot afford, such as the software sound mix (chapter 04), the double buffer and 60 Hz from the VDP.
+
 ## Chip RAM bandwidth and the CPU
 
 **Problem.** Sonic GX (an Amstrad Plus game that scrolls the whole screen) ran at 29.9 frames a second on the PiStorm A1200 with frame skip, and at 41.2 without it (too slow, 108% of the frame budget). A first guess was that the blitter should do the work, since it copies in the background.
