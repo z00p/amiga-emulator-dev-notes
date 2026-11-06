@@ -4,7 +4,7 @@ A small, self-contained routine that reads a CD32 pad (or a pad adapter in its C
 
 | File | What it is |
 |---|---|
-| `cd32pad.s` | 68000 asm (Devpac / vasm `-devpac` syntax), from AmiMSX 4.1.1 and later. It reads port 2, port 1 or both in one call and returns 7 buttons as 1 = pressed. A plain joystick reads as `$00`. |
+| `cd32pad.s` | 68000 asm (Devpac / vasm `-devpac` syntax). Written for the AmiMSX 4.x update (4.1.1 and later); it is not part of Juan Antonio Gómez Gálvez's original AmiMSX, which has no CD32 read. It reads port 2, port 1 or both in one call and returns 7 buttons as 1 = pressed. A plain joystick reads as `$00`. |
 | `cd32pad.c`, `cd32pad.h` | The same protocol in C (amiga-gcc), from Arnold for the Amiga. It reads one port per call and returns 7 buttons plus the 2 ID bits. `cd32pad_dirs()` gives the directions. |
 | `cd32test.c` | A Shell tool that prints the raw bits and the directions as they change: `cd32test [port] [seconds]`, port 2 by default. |
 | `build.sh` | Builds `cd32test` with amiga-gcc and assemble-checks `cd32pad.s` with vasm. |

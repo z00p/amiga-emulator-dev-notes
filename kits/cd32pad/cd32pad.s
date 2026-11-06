@@ -1,5 +1,8 @@
 ; cd32pad.s - read CD32 pads on both Amiga joystick ports, hardware banging.
-; Copyright (c) 2026 z00p. MIT licence, see LICENSE. From the CD32 pad read in AmiMSX 4.1.1 and later, made standalone.
+; Copyright (c) 2026 z00p. MIT licence, see LICENSE.
+; Written in October 2026 for the AmiMSX 4.x update (in 4.1.1 and later) and
+; made standalone here. It is new code: Juan Antonio Gomez Galvez's original
+; AmiMSX (3.1) has no CD32 read.
 ; Devpac / vasm (-devpac) syntax, 68000 and up.
 ;
 ; ReadCD32Pads
