@@ -2,7 +2,7 @@
 
 ## JIT branch prediction and code layout
 
-*Reading notes (Arnold).* Times are per CPC frame on a PiStorm A1200 (Emu68, `Arnold` 68040 `-O2` build, Sonic GX key script, sound on, no frame skip). "Work" is the whole frame, "c2p" the chunky-to-planar conversion, and "core" is work minus c2p (the CPC emulation and its drawing into the chunky buffer). The budget is 20 ms a frame. Chapter 01 describes the machine; the measuring method is the last section of this chapter.
+*Reading notes (Arnold).* Times are per CPC frame on a PiStorm A1200 (Emu68, `Arnold` 68040 `-O2` build, Sonic GX key script, sound on, no frame skip). "Work" is the whole frame, "c2p" the chunky-to-planar conversion, and "core" is work minus c2p (the CPC emulation and its drawing into the chunky buffer). The budget is 20 ms a frame. Chapter 01 describes the machine; the measuring method is in "Measuring per frame on real hardware" below.
 
 ### On Emu68, the shape of the branches matters more than the instruction count
 

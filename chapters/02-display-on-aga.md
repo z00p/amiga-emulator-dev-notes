@@ -438,7 +438,7 @@ ScrExitSet:
 
 **Evidence** (A1200, Sonic GX, 2250 frames, spring frames 2198 to 2212): chip bytes 23.8 to 13.0 KB a frame, c2p 5.49 to 4.00 ms, work 23.0 to 20.9 ms. A first version that searched all offsets cost 267 microseconds a frame and made the whole run slower (48.3 against 49.3 frames a second); voting costs 88 microseconds. The whole run changes little (16.89 against 16.85 ms) because springs are rare. Spring frames are still late in this step because the core is slow there (the sprite work of chapter 10).
 
-**Look up.** `VSCROLL.md`; the tall area uses 96 spare rows above and below (448 rows).
+**Look up.** `VSCROLL.md`; the tall area has 128 spare rows above and below the screen (the margin); the shift range is 96 rows.
 
 ## NTSC 240-line and PAL 272-line (TALL) screens
 

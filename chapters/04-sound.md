@@ -2,7 +2,7 @@
 
 ## Paula output paths and the AUD0 interrupt storm on NTSC
 
-*Reading notes (Arnold).* Arnold's sound is the Amstrad's AY-3-8912 sound chip (the PSG) mixed in the core, then converted to Paula samples. The core makes one block of 444 samples per CPC frame (22.24 kHz at 50 frames a second), so the frame rate and the sound rate are locked together.
+*Reading notes (Arnold).* Arnold's sound is the Amstrad's AY-3-8912 sound chip (the PSG) mixed in the core, then converted to Paula samples. The core makes one block of 444 samples per CPC frame (about 22.2 kHz at 50 frames a second), so the frame rate and the sound rate are locked together.
 
 ### Two ways of feeding Paula, and what the display decides
 
