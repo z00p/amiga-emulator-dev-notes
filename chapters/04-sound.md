@@ -293,7 +293,7 @@ and a busy stream outranks any tone for its voice:
 
 *Source: AmiPCEngine 1.1, src/PSG.asm (freeware by Juan Antonio Gómez Gálvez and z00p; used with permission).*
 
-**Why.** The written values were already right. The error was when they played, and a simulation of only the line grid on the reference's own writes gave the same figures, which proved it. The period is 0.2% long on purpose, so the queue fills rather than runs dry; with 3 or more buffers waiting, 2 samples are left off. Streams that are not timer-driven (Moto Roader II's bursts) stay on the line grid.
+**Why.** The written values were already right. The error was when they played, and a simulation of only the line grid on the reference's own writes gave the same figures, which proved it. The period is meant to be 0.2% long, so the queue fills rather than runs dry; on a PAL screen it is in fact 0.36% long, because the comment's 227.5 colour clocks a line is NTSC's average and a PAL line is 227 (313 x 227 / 116.9 = 607.8, so 609 would be 0.2% long). The queue still fills, and only the drops come a little more often; with 3 or more buffers waiting, 2 samples are left off. Streams that are not timer-driven (Moto Roader II's bursts) stay on the line grid.
 
 **Evidence.** Parodius "1 PLAYER" against the reference, signal-to-noise ratio in dB:
 

@@ -358,7 +358,7 @@ The logic (preset table, parsing and printing of pairs, Amiga and CPC key names,
 
 ### On a fast machine, start the frame late and read the pad again first
 
-**Problem.** On RTG the A1200 (PiStorm) needs only 13 to 26% of a frame to emulate and draw a PC Engine frame. It started straight after the vblank and then sat idle. A press made during that idle time waited for the next vblank.
+**Problem.** On RTG the A1200 (PiStorm) needs only 13 to 26% of a frame to emulate and draw a PC Engine frame in these runs (8 titles, one scanline setting; the speed sweep in chapter 12 reaches 28% with the strongest scanlines). It started straight after the vblank and then sat idle. A press made during that idle time waited for the next vblank.
 
 **After** (commit db36ef2, switch `NO_LATESTART`, RTG only), reduced:
 
