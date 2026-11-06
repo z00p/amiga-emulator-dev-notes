@@ -2,7 +2,7 @@
 
 ## PiStorm (Emu68), 68030/50 and BigMig compared
 
-*Reading notes (Arnold).* All Arnold figures in these notes were measured on one machine: an A1200 with a PiStorm (CM4) running Emu68, OS 3.2.3, no Zorro cards, with the emulator in `Arnold` (68040, `-O2`) builds. Arnold 1.0 to 1.6 also shipped `-030`, `-040-Max`, `-060` and `-060-Max` builds; since 1.7 only `Arnold` and `Arnold-060` ship (chapter 07). `Arnold-060` is checked in WinUAE and has run on the A1200, but has not been timed on a BigMig. We have not timed Arnold on a real 68030/50 or on a BigMig, so this section says what the PiStorm numbers do and do not transfer to, and does not invent figures for the others.
+*Reading notes (Arnold).* All Arnold figures in these notes were measured on one machine: an A1200 with a PiStorm (CM4, running Emu68) in the trapdoor slot and no other expansions, OS 3.2.3, with the emulator in `Arnold` (68040, `-O2`) builds. Arnold 1.0 to 1.6 also shipped `-030`, `-040-Max`, `-060` and `-060-Max` builds; since 1.7 only `Arnold` and `Arnold-060` ship (chapter 07). `Arnold-060` is checked in WinUAE and has run on the A1200, but has not been timed on a BigMig. We have not timed Arnold on a real 68030/50 or on a BigMig, so this section says what the PiStorm numbers do and do not transfer to, and does not invent figures for the others.
 
 **What the target is for Arnold.** Arnold runs a whole CPC (Z80, CRTC, gate array, and on the Plus the ASIC with sprites and DMA) as C code, draws a chunky 384 x 272 picture, and converts it to 8 bitplanes (chunky-to-planar, c2p) for an AGA screen. Every 20 ms it must finish the emulation, the c2p and the sound for one CPC frame. The budget is therefore about 20 ms a frame; chapter 10 shows the figures per game.
 
