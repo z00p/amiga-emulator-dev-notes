@@ -22,6 +22,8 @@ One line per pitfall, with the lesson that explains it. Read the lesson before a
 - A "too short to be a line" threshold in a monitor model squashes games that alternate the line length; compare with the reference emulator, and average the sync like a real monitor does. ([A line of 62 characters was refused, so two lines landed on one](02-display-on-aga.md#a-line-of-62-characters-was-refused-so-two-lines-landed-on-one))
 - To follow a game's per-line backdrop on AGA, make a tile pixel of 0 truly index 0 (palette planes only where the row has a pixel). One copper MOVE to COLOR00 a line then reaches every such pixel, and BRDRBLNK keeps the sides from striping. ([A BG pixel of 0 made truly index 0: one copper MOVE a line follows the game's backdrop](02-display-on-aga.md#a-bg-pixel-of-0-made-truly-index-0-one-copper-move-a-line-follows-the-games-backdrop))
 - BPLCON2 can put the sprites behind the playfield for a whole frame when all visible sprites agree. A mixed frame stays in front. ([Sprites behind the BG for a whole frame by BPLCON2, and why a mixed frame cannot use it](02-display-on-aga.md#sprites-behind-the-bg-for-a-whole-frame-by-bplcon2-and-why-a-mixed-frame-cannot-use-it))
+- Mask a guest's index (tile, sprite, page number) to the guest's memory size before it indexes any host table. An index past the end reads memory nobody clears. ([A tile number past the end of the guest's memory read a flag nobody clears](02-display-on-aga.md#a-tile-number-past-the-end-of-the-guests-memory-read-a-flag-nobody-clears))
+- In a renderer that caches by dirty flags, do not flag a write that leaves the value unchanged; games rewrite whole banks every frame. ([A write that changes nothing should not ask for a redraw](02-display-on-aga.md#a-write-that-changes-nothing-should-not-ask-for-a-redraw))
 
 ## CPU core
 
@@ -66,6 +68,8 @@ One line per pitfall, with the lesson that explains it. Read the lesson before a
 - Log where each frame waits (VBlank and beam line at the end of the emulation, the input read and the render) before changing the frame loop for lag. ([Log where each frame waits before changing anything](05-input.md#log-where-each-frame-waits-before-changing-anything))
 - Show a finished frame at once and wait afterwards; the tick wait paces the emulation, it should not hold a finished picture. This applies to a double buffer's commit too. ([Draw the frame as soon as it is emulated](05-input.md#draw-the-frame-as-soon-as-it-is-emulated), [Commit the double-buffered frame before the wait, too](05-input.md#commit-the-double-buffered-frame-before-the-wait-too))
 - Before removing something that exists for the picture (a double buffer), get an A/B by eye on the player's display chain: good timing figures did not mean smooth scrolling. ([A faster path is not a better one until someone has looked at it](05-input.md#a-faster-path-is-not-a-better-one-until-someone-has-looked-at-it))
+- Start each emulated frame at the guest's vblank line, so the game's pad read comes first and its result is drawn in the same frame. ([Start the emulated frame at the guest's vertical blank, not at its line 0](05-input.md#start-the-emulated-frame-at-the-guests-vertical-blank-not-at-its-line-0))
+- On a machine with time to spare, start the frame late (the slowest recent frame plus a margin before the next vblank) and read the pad again first. ([On a fast machine, start the frame late and read the pad again first](05-input.md#on-a-fast-machine-start-the-frame-late-and-read-the-pad-again-first))
 
 ## Testing
 
@@ -108,6 +112,8 @@ One line per pitfall, with the lesson that explains it. Read the lesson before a
 - Find a hang with variant builds that each change one thing (compiled out, padded to the same size, early returns at each stage), not by reading. ([Find a hang with variant builds, not by reading](06-testing.md#find-a-hang-with-variant-builds-not-by-reading))
 - Write a test build's log with `PROGDIR:`, not the program's assign: a tester without the assign gets a "Please insert volume" requester. ([Write the log next to the program, not to its assign](06-testing.md#write-the-log-next-to-the-program-not-to-its-assign))
 - Do not put `&` inside a command an agent already runs in the background: the subshell outlives the task, and a rerun then shares its slots and log. ([A subshell sent to the background keeps running after its task "finishes"](08-agent-workflow.md#a-subshell-sent-to-the-background-keeps-running-after-its-task-finishes))
+- When the speed rows say "slow" but not why, count each redraw at the decision that causes it, then dump the guest's video memory to a file and read it on the PC. ([When the rows say "slow" but not why: probe counters, then a state dump](06-testing.md#when-the-rows-say-slow-but-not-why-probe-counters-then-a-state-dump))
+- Look at one grab before trusting a comparison of grabs: two grabs of the wrong screen match perfectly. ([A grab of the wrong screen compares equal](06-testing.md#a-grab-of-the-wrong-screen-compares-equal))
 
 ## Sound and performance
 

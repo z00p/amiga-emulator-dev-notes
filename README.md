@@ -17,10 +17,10 @@ Each lesson shows real code **before and after** a fix, the symptom it caused, a
 | # | Chapter | Main contributor |
 |---|---|---|
 | 01 | [Target hardware](chapters/01-target-hardware.md) | Arnold |
-| 02 | [Display on AGA](chapters/02-display-on-aga.md) | AmiMSX (Arnold adds OS-screen topics, AmiPCEngine colour 0 and sprite priority) |
+| 02 | [Display on AGA](chapters/02-display-on-aga.md) | AmiMSX (Arnold adds OS-screen topics, AmiPCEngine colour 0, sprite priority and redraw flags) |
 | 03 | [CPU cores in 68k](chapters/03-cpu-cores.md) | all three |
 | 04 | [Sound](chapters/04-sound.md) | Arnold, AmiPCEngine |
-| 05 | [Input](chapters/05-input.md) | AmiMSX |
+| 05 | [Input](chapters/05-input.md) | AmiMSX (AmiPCEngine adds input lag) |
 | 06 | [Testing](chapters/06-testing.md) | all three |
 | 07 | [Toolchains and release](chapters/07-toolchains-release.md) | AmiMSX, Arnold (AmiPCEngine adds one vasm lesson) |
 | 08 | [Agent workflow](chapters/08-agent-workflow.md) | both |

@@ -446,6 +446,42 @@ and the run script on the PC prints each share of all lines:
 
 **A trap with debug rows.** The panel takes lines, so a debug build moves the picture. In a photo of an AGA debug build, Parodius' lives and score row was off the bottom of the display. On NTSC the row landed at about line 268, past the end of a 262-line frame. A normal build shows it. WinUAE's 313-line PAL window showed it both ways, so only the real machine showed the loss. Before calling a photo of a debug build a fault, look at a normal build.
 
+## When the rows say "slow" but not why: probe counters, then a state dump
+
+*AmiPCEngine.* The speed rows above showed that Parodius on AGA was redrawing the whole background every frame after a flash bomb (17 of 51 frames, background time up tenfold). They could not say why. Two more steps found it in three test rounds, without anyone describing the screen.
+
+**Step 1: counters that name the cause.** A probe build (switch `DbgProbe`) replaces one debug row with counts for one frame: cells redrawn because their map word changed, cells redrawn because their tile was written, how many tiles were written and the lowest and highest of them, the CPU and DMA writes to video RAM, and how many written bytes actually changed. Each count is one `ADDQ` at the decision it explains:
+
+	CMP.W	(A5)+,(A6)+		; map word as last drawn?
+	BNE.S	.pBat			; probe: count, then redraw
+	TST.B	([A7])			; tile written since?
+	BNE.S	.pTil
+	...
+	.pBat:	ADDQ.W	#1,PrbBat
+		BRA.S	.PrtGfxRut
+	.pTil:	ADDQ.W	#1,PrbTil
+		BRA.S	.PrtGfxRut
+
+The first photo ruled out half the theories at once: 0 map changes, about 466 cells redrawn for written tiles, 17 tiles written each frame. The second build added the "bytes changed" count, which showed the rewrites were almost all of the same values. A fix for that went into the third build, and it helped only a little, so the cause was still elsewhere.
+
+**Step 2: a dump of the guest state, read on the PC.** The next build kept a copy of the guest's video RAM, redraw flags, video registers and palette each frame, the last two frames. When the tester pressed Esc, with the operating system back, it wrote them to a file in the program's own drawer:
+
+	PrbDumpWrite:				; Esc, OS alive
+		...				; dos.library Open(PROGDIR:pcevram.bin, MODE_NEWFILE)
+		MOVE.L	PrbSnapNew,D2		; newest frame: VRAM 64K, flags 2K, regs, palette
+		MOVE.L	#PrbSnapLen,D3
+		JSR	-48(A6)			; Write
+		MOVE.L	PrbSnapOld,D2		; the frame before
+		...
+
+*Source: AmiPCEngine 1.4 development, src/DbgRows.asm and src/VDP_AGA.asm (freeware by Juan Antonio Gómez Gálvez and z00p; used with permission).*
+
+A short script on the PC decoded the map and the tiles, listed the tiles that changed between the two frames, and rendered the whole map to a PNG. It showed at once 480 cells with tile numbers above $7FF, the lesson in chapter 02 ("A tile number past the end of the guest's memory read a flag nobody clears"). The counts had pointed at "written tiles", and the dump showed that those cells' tiles were not being written at all.
+
+**Why it works.** Counters are cheap and safe while the OS is frozen, and a photo carries them. A dump has to wait for the OS, but it holds everything, and the analysis can be rerun on the PC as often as needed. Keep the snapshot buffers in a BSS section (137 KB inline in the code pushed short branches out of range), keep the dump in its own build switch, and keep the rest of the build the tester's normal one.
+
+**Look up.** Commits 61e045c (probe rows), faee2c7 (changed-bytes count), 4f48ef9 and 3384ec0 (dump); switch `DbgProbe`; `DbgProbeScan`, `PrbDumpWrite`; notes `docs/agent_notes/lag.md`.
+
 ## A headless x86 host with per-frame checksums
 
 *Arnold.* The emulator core is plain C, so the same source also builds as a small program for a PC with no window and no sound: the headless host (`arnold/src/headless`). It runs a game for a given number of frames and writes out what it did. This is the cheapest test we have, and most of the work in this book was checked with it first.
@@ -676,6 +712,25 @@ The runner copies the new build into the run folder of the checkout it runs in. 
 - Tie a result to its binary with a build reference ([the first section](#use-both-loops-and-keep-a-build-reference-that-ties-them-together)), so a stale binary shows.
 
 **Look up.** STATUS, "Release 1.1"; notes `docs/agent_notes/rc1.md`, "Rig notes", `faults.md`, B7.
+
+### A grab of the wrong screen compares equal
+
+**Problem.** A check of two builds, a fix on and off, compared WinUAE window grabs of eight titles: all eight "identical". They were. Every grab was the Workbench screen. Five test configs still mounted the run folder and the Workbench of an old worktree, so the program was never started.
+
+**Before** (`winuae/AmiPCE-wt.uae`; the path shortened here):
+
+	filesystem2=rw,DH9:PCE:<checkout>\build\wt_rtg\run,-128
+
+**After** (commit 3bfff46): the main checkout's own `run` folder and a Workbench copy beside the configs.
+
+**Why.** The previous lesson's failure ("no result") was loud because the regression waits for a result file only the program can write. A grab comparison has no such signal. Two grabs of the same wrong screen match perfectly, and a perfect match looks like the best possible answer.
+
+**Habits.**
+- Look at one grab of each set before reading any comparison figure, or check that something only the program writes is there.
+- Treat "identical everywhere" with the same suspicion as "fails everywhere".
+- When a config is copied for a worktree, rename it, and keep the shared ones on the main checkout.
+
+**Look up.** Commit 3bfff46; STATUS, "Layout" (the configs and the tools that use them).
 
 ### A guard block catches the overrun, and so hides the crash
 

@@ -253,6 +253,91 @@ The logic (preset table, parsing and printing of pairs, Amiga and CPC key names,
 
 **Look up.** Commits 677bfc9, adb8aec, c7c1f6b; `KEYMAP.md`; `KeyMap_Presets`.
 
+## Cutting input lag (AmiPCEngine)
+
+*AmiPCEngine.* An emulator adds lag on top of the game's own: the pad is read once, the guest frame that uses it is emulated, and the picture is copied to the screen. On a PC Engine game, a press reached the screen two to three frames late (40 to 60 ms at 50 Hz). About two of those frames were the emulator's. The two lessons below took most of that back, each behind its own switch. On the A1200 (PiStorm), a tester's verdict on R-Type with a CD32 pad was "feels very responsive".
+
+### Start the emulated frame at the guest's vertical blank, not at its line 0
+
+**Problem.** The emulator read the pad in the Amiga's vertical blank interrupt, then emulated one whole PC Engine frame, lines 0 to 262. A PC Engine game reads its pad in its own vblank interrupt, which the video chip raises after the last picture line (line 240 for R-Type). So the game saw the press near the end of the emulated frame, and what it did with it was drawn in the next one.
+
+**Before** (`src/PCE.asm`, `PCE_Start`, AmiPCEngine 1.3):
+
+	PCE_Start:
+		MOVEQ.L	#0,D0			; line 0 ...
+		MOVE.L	#263-1,D1		; ... to 262: one PCE frame
+		...				; line-0 work: sprite table copy, scroll log
+	PCE_StaBuc:
+		...				; one line
+		ADDQ.W	#1,D0
+		DBF	D1,PCE_StaBuc
+
+**After** (commit 529f488, switch `NO_VBLUNIT`), reduced:
+
+	PCE_Start:
+		MOVE.W	UnitStart,D0		; on from the last frame's vblank line
+		...
+	PCE_StaBuc:
+		CMP.W	#263,D0
+		BCS.S	.in
+		MOVEQ	#0,D0
+		BSR	PCE_FrameTop		; the line-0 work, where the guest frame wraps
+	.in:	...				; one line
+		ADDQ.W	#1,D0
+		TST.B	UnitWrapped
+		BEQ.S	.go
+		CMP.W	VblLine,D0		; the vblank line again: this emulated frame ends
+		BCC.S	.end
+	.go:	DBF	D1,PCE_StaBuc
+	.end:	MOVE.W	D0,UnitStart
+
+*Source: AmiPCEngine 1.4 development, src/PCE.asm (freeware by Juan Antonio Gómez Gálvez and z00p; used with permission).*
+
+**Why.** One emulated frame is now the vblank lines of guest frame N-1 followed by the picture lines of frame N. The game's vblank handler runs first and reads the pad sampled at this Amiga vblank, and the picture it then draws is finished in the same emulated frame. That saves one whole frame, with no extra work: the same lines run, in a different order. The work is in moving everything that was keyed to "the start of the emulated frame" to the place where the guest frame wraps (`PCE_FrameTop`). That means the copy of the sprite table the frame shows, the start of the per-line scroll and colour logs, the scripted test input, and the sound samples filed by line. Anything you forget shows up as a one-frame shift against the reference emulator. That is why every scripted comparison was rerun.
+
+**Evidence.** WinUAE regressions: 69 of 69 titles on RTG and on AGA, memory guards clean, stack use unchanged. On the A1200, vblanks for the same 2400 frames (1500 for Soldier Blade) moved within noise: Parodius 2602 to 2603, Soldier Blade 1649 to 1655, Street Fighter II' 2430 to 2437. With the switch set to 1 the binary is the 1.3 release byte for byte.
+
+**Look up.** Commit 529f488; switch `NO_VBLUNIT`; `PCE_FrameTop`, `UnitStart`; notes `docs/agent_notes/lag.md`.
+
+### On a fast machine, start the frame late and read the pad again first
+
+**Problem.** On RTG the A1200 (PiStorm) needs only 13 to 26% of a frame to emulate and draw a PC Engine frame. It started straight after the vblank and then sat idle. A press made during that idle time waited for the next vblank.
+
+**After** (commit db36ef2, switch `NO_LATESTART`, RTG only), reduced:
+
+	LateStart:				; after the last frame is on screen
+		...				; D2 = slowest of the last 16 frames (lines)
+		MOVE.W	D2,D1			; margin: 24 lines + a quarter
+		LSR.W	#2,D1
+		ADD.W	#24,D1
+		ADD.W	D1,D2
+		MOVE.W	LsFrame,D3		; lines from vblank to vblank, measured
+		SUB.W	D2,D3			; start at: frame - (work + margin)
+		BLE.S	.read			; no time to spare: start now
+	.wt:	TST.B	vBlankOccurred		; never past the next vblank
+		BNE.S	.read
+		BSR	LsTod			; CIA-B time of day: lines
+		SUB.W	LsVblTod,D0
+		CMP.W	D3,D0
+		BLT.S	.wt
+	.read:	MOVE.W	#$4000,$DFF09A		; the pad, as the vblank interrupt reads it
+		MOVE.L	JoyControlRut,A0
+		JSR	(A0)
+		...
+		MOVE.W	#$C000,$DFF09A
+
+`LateEnd` adds each frame's working time to a ring of 16. A frame still running at the next vblank turns the wait off for 50 frames.
+
+*Source: AmiPCEngine 1.4 development, src/Main.asm (freeware by Juan Antonio Gómez Gálvez and z00p; used with permission).*
+
+**Why.** This is the "frame delay" idea from PC emulators, made adaptive. The wait leaves just enough of the frame for the slowest recent frame plus a margin, then reads the pad again, so the game sees a press made up to most of a frame later. Times are in raster lines from the CIA-B time-of-day counter, which counts horizontal syncs on any CPU and in any display mode (chapter 06, debug rows). The interrupt notes the counter at each vblank, which gives the real frame length (262 or 313 lines; a reading outside 200 to 330 is ignored, and until there is one there is no wait). A heavy game, or a frame that runs late, just falls back to starting at once. Nothing is lost except the gain. It is not used on AGA, where some games already need more than a frame.
+
+Reading the pad twice a frame broke an old rule written over the classic CD32 pad read ("one VBL must have elapsed before repeating this"). On real pads through CD32 adapters it made no difference.
+
+**Evidence.** A1200, 8 RTG titles at full speed with no late frames. "Busy" (everything but the vblank wait) went from 13-26% to 81-85% of the frame, so the frame now starts 57 to 70% of a frame after the vblank: the pad is read 11 to 14 ms later than before, and that much lag is gone. 15 to 19% of the frame is still spare (the margin), which can be tightened later. WinUAE RTG regression: 69 of 69, vblanks unchanged.
+
+**Look up.** Commit db36ef2; switch `NO_LATESTART`; `LateStart`, `LateEnd`, `LsTod`; the `DLAY` figure on the debug rows (lines waited); notes `docs/agent_notes/lag.md`.
+
 ## Controller lag: measure the frame, then reorder it (AmiMSX)
 
 Lag is the time from a stick movement to the first picture that shows the game's answer. The game's own share (it may read the stick once a frame, or move the ship a frame later) is the same on every emulator, so the part worth working on is ours: when the input is read, how long after that the frame is emulated, and when the result reaches the screen.

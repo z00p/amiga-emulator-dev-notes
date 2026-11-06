@@ -666,3 +666,62 @@ COLOR00 also fills the border, the trap of [the Arnold lesson above](#black-pens
 **Evidence.** Parasol Stars' clouds are behind the letters in WinUAE, as in the reference emulator, and in photos of the A1200, and its enemy sprites still show in play. Speed: the figures above. Tongueman's Logic on AGA on the A1200 runs 2400 frames in 2605 vblanks (0.92).
 
 **Look up.** Commit 3f172b9; switch `NO_SPRBACK`; notes `docs/agent_notes/night.md`, part 2b item 5 and the last section.
+
+## Redraw flags on a tile machine (AmiPCEngine)
+
+*AmiPCEngine.* On AGA the PC Engine background is drawn cell by cell into planes in chip RAM, and a cell is drawn again only when it has to be. The test is two parts: its map (BAT) word changed, or its tile's flag in `TabRedef` is set. Every write to video RAM sets the flag of the tile it lands in (one byte per tile, 2048 tiles), and the flags are cleared after each frame. Both lessons below come from one fault. In Parodius, after the bell's screen-clearing flash bomb, the game dropped to 17 frames a second for good. It is in every earlier AGA build.
+
+### A tile number past the end of the guest's memory read a flag nobody clears
+
+**Problem.** The flash leaves 480 map cells, in a part of the map the game does not show, holding tile numbers $E00 to $FFF. The PC Engine has 64 KB of video RAM, room for tiles $000 to $7FF, so those numbers wrap. The AGA renderer used all 12 bits.
+
+**Before** (`src/VDP_AGA.asm`, `PrintGFX`, AmiPCEngine 1.3):
+
+	AND.W	#$0FFF,D0		; tile number from the BAT word
+	LSL.W	#4,D0
+	LEA	(A4,D0.L*2),A2		; its pixels: VRAM + tile * 32
+	lsr.l	#4,d0
+	lea	(TabRedef,D0.L),A1	; its redraw flag
+
+**After** (commit 622e948, switch `NO_TILEWRAP`):
+
+	AND.W	#$07FF,D0		; tile: 32K words of VRAM, 2048 redraw flags
+
+*Source: AmiPCEngine 1.4 development, src/VDP_AGA.asm (freeware by Juan Antonio Gómez Gálvez and z00p; used with permission).*
+
+**Why.** Tile $E00 read its flag 1.5 KB past the end of the 2048-byte table. That memory belongs to something else, is never cleared, and was not zero, so all 480 cells were "dirty" every frame. Their pixels came from past the end of video RAM too, but those cells were never on screen, so the picture looked right and only the speed showed it. The RTG renderer already masked with $7FF, which is why RTG was fine. Rule: mask a guest's index to the guest's own memory size before it indexes any host table, even where the guest "should" never use the high bits.
+
+**Evidence.** Before, the probe row of the next section showed exactly 480 cells (01E0) redrawn every frame for a written tile. On the A1200, after the fix, Parodius keeps full speed after the flash. The WinUAE AGA regression (69 titles, 600 frames each) found more games doing the same thing. Meteor Blaster DX went from 1680 to 1166 vblanks, Gomola Speed from 1000 to 676 and The Legendary Axe from 1027 to 929. None got slower. Pictures with the switch on and off are the same: 16 RTG captures and six AGA title screens, pixel for pixel.
+
+**Look up.** Commit 622e948; switch `NO_TILEWRAP`; `PrintGFX`, `PrintGFXchip`; notes `docs/agent_notes/lag.md`.
+
+### A write that changes nothing should not ask for a redraw
+
+**Problem.** The same Parodius scene also rewrote 17 tiles of graphics every frame (about 260 word writes), almost all with the value already there. Each write set its tile's flag, so every cell that used those tiles was drawn again.
+
+**Before** (`src/IO.asm`, `writeVDP_02`, AmiPCEngine 1.3): store, then flag:
+
+	MOVE.W	VDP_Regs+(2*2),D0
+	MOVE.W	D0,(VRAM,D1.W*2)
+	MOVE.W	D1,D0
+	LSR.W	#4,D0
+	ST	(TabRedef,D0.W)
+
+**After** (commit faee2c7, switch `NO_VRAMSAME`), and the same in the two byte-write paths:
+
+	MOVE.W	VDP_Regs+(2*2),D0
+	CMP.W	(VRAM,D1.W*2),D0	; the same value: nothing to draw again
+	BEQ.S	.vsame
+	MOVE.W	D0,(VRAM,D1.W*2)
+	MOVE.W	D1,D0
+	LSR.W	#4,D0
+	ST	(TabRedef,D0.W)
+	.vsame:
+
+*Source: AmiPCEngine 1.4 development, src/IO.asm (freeware by Juan Antonio Gómez Gálvez and z00p; used with permission).*
+
+**Why.** On the real chip a rewrite costs the game nothing, so games do it freely: a routine that refreshes a whole sprite bank or a font every frame is common. For a renderer that caches its output, an unchanged write is pure cost. One compare on the write path is cheap next to redrawing every cell that uses the tile.
+
+**Evidence.** In the Parodius scene the probe counted 0 to 24 bytes actually changed against about 260 words written, and the dirty tiles fell from 17 to 3-8 a frame. On its own this fix only took Parodius from 17 to 19 frames a second. The other lesson was the real cause, which is why it pays to count before you fix. Both together are behind the regression figures above.
+
+**Look up.** Commit faee2c7; switch `NO_VRAMSAME`; `writeVDP_02`, `EscribeVRAM2`, `EscribeVRAM3`.
