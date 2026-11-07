@@ -99,7 +99,7 @@ A port left on Standard is never driven: its read is the old plain read, byte fo
 **Evidence.**
 - 4.1 switched the detection off (a build switch kept it for experiments), and 4.1.1 replaced it with the option and removed the probe code.
 - Tested in WinUAE with a build that dumps the raw pad bits into a keyboard matrix row: the option bytes load, each port's path runs, the plain configuration is byte-identical to before, and nothing spurious reaches the MSX. WinUAE's emulated pad never answered in the test harness (its keyboard-layout joystick is not live there), so the protocol itself was verified against WinUAE's source and not against a running pad.
-- Checked afterwards on a real A1200 with a KTRL CD32 pad and a Mega Multi adapter in CD32 mode: both fire buttons, Start/Play pausing, and the extra buttons work; a plain joystick on Standard is unchanged.
+- Checked afterwards on a real A1200 with a KTRL CD32 pad: both fire buttons, Start/Play pausing and blue work; a plain joystick on Standard is unchanged. A Mega Multi adapter in its Standard mode first read as all seven CD32 buttons held (pin 9 never changes over the clocks), so Play paused the game: all seven at once is now taken as a plain pad. The same adapter in its CD32 mode did not answer the CD32 read in a later test (7 Nov 2026, AmiMSX 4.6 and the kit alike): only A and B worked, through the plain read. Whether that is the adapter or its setting is not known.
 
 **Look up.** Commits bee6430, 38d0b84, 4212d25; `PrefCD32`, `PrefCD32M`; notes in `Docs/open_issues.md` (the three CD32 entries).
 
