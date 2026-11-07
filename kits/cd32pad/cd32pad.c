@@ -28,6 +28,11 @@
 extern struct Custom custom;
 extern struct CIA ciaa;
 
+/* The NDK's struct Custom is not volatile: through it, gcc -O2 drops the
+ * POTGO write below (a later one overwrites it) and reads POTINP once for all
+ * nine bits. So every chip register goes through a volatile pointer. */
+#define CUSTOM ((volatile struct Custom *)&custom)
+
 unsigned cd32pad_read(int port)
 {
 	volatile UBYTE *pra = &ciaa.ciapra, *ddra = &ciaa.ciaddra;
@@ -45,17 +50,17 @@ unsigned cd32pad_read(int port)
 	*pra |= clk;                    /* clock high first... */
 	*ddra |= clk;                   /* ...then the fire line becomes an output */
 	for (d = 0; d < 4; d++) dummy = *pra;
-	custom.potgo = mode;            /* pin 5 low: CD32 mode */
+	CUSTOM->potgo = mode;            /* pin 5 low: CD32 mode */
 	for (d = 0; d < 25; d++) dummy = *pra;
 	for (i = 0; i < 9; i++) {
 		for (d = 0; d < 10; d++) dummy = *pra;
-		if (!(custom.potinp & data)) bits |= 1u << i;
+		if (!(CUSTOM->potinp & data)) bits |= 1u << i;
 		*pra &= ~clk;               /* clock pulse: the next bit */
 		for (d = 0; d < 4; d++) dummy = *pra;
 		*pra |= clk;
 	}
 	*ddra &= ~clk;                  /* fire line back to an input */
-	custom.potgo = 0xff00;          /* pin 5 high again: normal 2-button mode */
+	CUSTOM->potgo = 0xff00;          /* pin 5 high again: normal 2-button mode */
 	Enable();
 	(void)dummy;
 	return bits;
@@ -63,7 +68,7 @@ unsigned cd32pad_read(int port)
 
 unsigned cd32pad_dirs(int port)
 {
-	UWORD j = port == 1 ? custom.joy0dat : custom.joy1dat;
+	UWORD j = port == 1 ? CUSTOM->joy0dat : CUSTOM->joy1dat;
 	unsigned m = 0;
 	if (((j >> 9) ^ (j >> 8)) & 1) m |= 1;   /* up */
 	if (((j >> 1) ^ j) & 1) m |= 2;          /* down */

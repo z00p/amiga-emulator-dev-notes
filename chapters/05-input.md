@@ -178,7 +178,9 @@ The directions still come from `JOY1DAT`. Red is fire 1, and blue, yellow and gr
 
 **Evidence.** Arnold's `padtest` Shell tool (commit 564e69c) showed the hardware bits, lowlevel.library's value and the hand read side by side. With the KTRL pad, lowlevel.library showed red only, and the hand read showed all seven buttons and the ID bits. The first hand read still decided CD32 or not from lowlevel.library's controller type. Two days later that was dropped for the menu option, after a plain joystick read as a CD32 pad lost its fire button.
 
-**Look up.** Commits 5558bc9, 29f07cf, 564e69c; `read_cd32_buttons`, `padtest.c`.
+**Correction (November 2026).** The C above does not do what it says when built with gcc -O2. The NDK's `struct Custom` is not `volatile`, so the compiler removes the `custom.potgo = 0x6f00` write (the later 0xFF00 write overwrites it) and reads `POTINP` once for all nine bits. The pad never enters CD32 mode, and a held button reads as every bit at once. The objdump of Arnold 1.7's joystick code at its release flags shows exactly that, and so does `padtest` built at -O2, so the evidence above cannot be confirmed. The fix is to reach every chip register through a volatile pointer, `#define CUSTOM ((volatile struct Custom *)&custom)`. With it, the kit's `cd32test` reads a KTRL CD32 pad correctly on the PiStorm A1200: the ID bit at rest and each button on its own. The asm read never had the problem. Lesson: when a hardware read in C fails in a way that looks like a hardware fault, read the compiled code before blaming the pad.
+
+**Look up.** Commits 5558bc9, 29f07cf, 564e69c; `read_cd32_buttons`, `padtest.c`; [kits/cd32pad](../kits/cd32pad/README.md), "The compiler trap in the C read".
 
 ### Notes from three projects
 

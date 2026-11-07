@@ -11,9 +11,17 @@ A small, self-contained routine that reads a CD32 pad (or a pad adapter in its C
 
 ## How they have been tested
 
-- **The C read:** in Arnold on a PiStorm A1200 with a KTRL CD32 pad.
-- **The asm read:** in AmiMSX, with a KTRL CD32 pad, an original CD32 pad and a Mega Multi adapter in CD32 mode.
-- **These standalone copies:** they build and assemble cleanly with no warnings. Run `cd32test` with your own pads before you depend on the read.
+- **The asm read:** in AmiMSX with a KTRL CD32 pad, and this file on its own, called from a Shell tool with the operating system running, on a PiStorm A1200 with the KTRL in port 2 (red, blue and play each seen on their own).
+- **The C read:** on the same A1200 and KTRL pad with `cd32test`: the ID bit at rest and each button on its own. This is the version with the volatile fix below; the first published version did not work (see the next section).
+- **These standalone copies:** they build and assemble cleanly with no warnings. Run `cd32test` with your own pads before you depend on the read. A held button that shows as every bit at once means the pad is not in CD32 mode, or the read never put it there.
+
+## The compiler trap in the C read
+
+The NDK's `struct Custom` is not declared `volatile`. Written as `custom.potgo = 0x6f00` and `custom.potinp`, gcc -O2 removes the write that pulls pin 5 low (a later POTGO write overwrites it, so the compiler treats the first as dead), and reads POTINP once for all nine bits. The pad never enters CD32 mode, and a held button reads as every bit at once. The first version of this kit had that bug. The fix is one line, with every chip register then reached through it:
+
+    #define CUSTOM ((volatile struct Custom *)&custom)
+
+If you adapt the C, check the compiled code (`m68k-amigaos-objdump -d`) for the POTGO write and for one POTINP read per bit.
 
 ## Using it
 
