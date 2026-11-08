@@ -1,6 +1,6 @@
 # Agent workflow
 
-*Reading notes.* AmiMSX 4.1.2 was largely made by AI coding agents, each given one fault to investigate, with a human owner who tests on the real machines, decides what ships and does every publishing step. These sections record what worked and what went wrong. Commit references name the AmiMSX development repository; the public repository carries squashed commits.
+*Reading notes.* AmiMSX 4.1.2 was largely made by AI coding agents, each given one fault to investigate, with a human owner who tests on the real machines, decides what ships and does every publishing step. These sections record what worked and what went wrong. Commit references name the AmiMSX development repository; the public repository carries squashed commits. Chapter 13, [Working with Claude on Amiga projects](13-working-with-claude.md), covers the partnership itself: where the agent needs checking, what only the tester can judge, and sharing repositories and licences across sessions.
 
 ## Briefing an agent: one track, evidence, WIP commits
 

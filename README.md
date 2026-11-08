@@ -41,6 +41,7 @@ Each lesson shows real code **before and after** a fix, the symptom it caused, a
 | 10 | [Performance on Emu68](chapters/10-performance-emu68.md) | Arnold, AmiPCEngine |
 | 11 | [Testing on the real A1200: the machine and its tools](chapters/11-test-machine.md) | A1200 setup notes (3D game-port lessons are in the appendix) |
 | 12 | [RTG output](chapters/12-rtg.md) | Arnold (rtgfw, MIT), AmiPCEngine |
+| 13 | [Working with Claude on Amiga projects](chapters/13-working-with-claude.md) | all three, and the A1200 setup notes (section 3) |
 
 ## Code kits
 
