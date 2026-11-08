@@ -114,7 +114,48 @@ The agent cannot see the TV, hear the speakers or hold the pad. Everything that 
 
 ## 3. Claude at the Amiga's keyboard (amimcp)
 
-*This section is being written by the A1200 build session and will be merged here. It covers what remote control of the A1200 is good for, what it cannot see, the safety rules and what to do when the network or the agent hangs. Until then, see chapter 06, "Real hardware over the network (amimcp)", and chapter 11.*
+With a small agent running on the A1200 (amimcp, described in chapter 06, "Real hardware over the network"), the agent can work on the real machine from the PC: run shell commands, copy and read files, take screenshots, send keys and mouse clicks, run ARexx. In practice that is good for four jobs:
+
+- **Installs and updates.** Copy a program over, check its version, list what it replaced, start it once and look at the screen. The agent does this faster than a person at the keyboard and writes down what it changed.
+- **File moves.** Copies in small, verified pieces, with the file count and byte total compared against the source (chapter 11, "Run big data from local disk, and copy it in small pieces").
+- **Screenshots of Workbench.** A quick look at what a window or a requester says, without walking to the machine.
+- **Scripted runs.** The agent writes a script, runs a test build with a key script and a log, and reads the log from the share afterwards. Chapter 06 and chapter 10 cover the timing runs.
+
+It is the same machine the tester uses, so the work comes with rules.
+
+### The rules before touching the machine
+
+- **Look before you act.** List the screens first. A full-screen program in front means the machine is in use, whatever the remote shell says. Read the coordination file (chapter 08) and add a line before a run: what, how long, and that you will leave it at Workbench.
+- **Never break a full-screen program.** Quit it with its own key (Esc, a menu). Ctrl-C leaves a 3D program's last frame frozen on screen and can block the next one until a reboot (chapter 11, appendix), and the capture cannot show whether a program that has taken over the screen has really stopped.
+- **One command at a time.** The agent runs one command at a time and gives up waiting after a time limit. Start anything long with `Run` from a script and poll its log, rather than holding the shell.
+- **Send only commands you have read about.** See the first lesson below.
+- **Leave it at Workbench.** Close what you opened, remove temporary assigns and files, and write "done" in the coordination file.
+
+### One guess at a program's ARexx port stopped the agent
+
+**Problem.** The A1200, 4 Nov 2026. A third-party dock program had been installed and drew nothing that could be seen. The agent wanted it closed, saw that it had an ARexx port, and sent it `QUIT`. The program never answered. ARexx has no time limit, so the command never came back, and the agent on the Amiga was busy with it: every later call (a shell command, a screenshot, even the break request) timed out after 30 seconds. The machine itself still answered a ping.
+
+**After.** Only the tester could clear it, by restarting the machine. The agent now sends a command to another program's ARexx port only if the program's own guide documents it, and otherwise asks the tester to close the program by hand.
+
+**Lesson.** The agent cannot cancel a call that is waiting on another program. An unknown command is not a harmless probe: if the other side never replies, the agent is stuck and the machine needs a person.
+
+**Look up.** Chapter 11, "After a reboot the network may stay down", for what to do once the machine is back.
+
+### A grey screenshot is not a failed run
+
+**Problem.** A third-party game emulator on the A1200, 2 and 5 Nov 2026. It draws on the machine's own chipset screen, not on the RTG Workbench, and the remote screenshot showed plain grey for the whole run. The program's own log, written to a file on the machine, said 60.5 frames a second and a clean quit for five test games.
+
+**After.** The agent stopped treating the screenshot as the test. It started the program with `Run` from a script, waited a fixed time, sent Esc, and read the program's log, which records its own speed, sound underruns and how it ended. The tester looked at the real screen for the picture.
+
+**Lesson.** Remote capture reads the screen the operating system knows about. A program that opens its own screen, or takes over the hardware, is invisible to it. Judge such a program by its log, and keep the tester's eyes for what the log cannot say (chapter 11, "Driving the screen remotely").
+
+### What the agent cannot do from here
+
+It cannot see the TV, hear the speakers or hold the pad (section 2). It cannot show a windowed 3D program: the capture of one comes out as an empty grey window. And it cannot reach the machine after a reboot until someone chooses "Go Online" on the Amiga, then connects the share. When a run needs a reboot, say so first and agree who brings it back.
+
+### Keeping the token and the addresses out of anything public
+
+The agent is a remote shell on the home network, protected by a token. The token and the machine's address belong in the local configuration and in private notes, not in a repository, a commit message, a release note or a chapter like this one. The release routine runs a scrub step that replaces local paths and names before anything is pushed, and a search for private details (the token, addresses, local paths) is part of the release check. Write "the A1200", "the share" and "the tester" in anything that goes out.
 
 ## 4. Several sessions, one repository
 
