@@ -131,6 +131,20 @@ CD32Ok2:
 
 **Evidence.** Found when a plain pad was tried on a port set to CD32 pad. No measurement was recorded beyond the code review. **Look up:** commit 6530efb.
 
+### No single read suits every pad: offer two, per port (FAmiga)
+
+*FAmiga 1.00 (Afrotechmods), from 0.97.*
+
+**Problem.** The kit's read worked on the KTRL CD32 pad but gave wrong buttons on a KTRL CD32+ and on a Mega Multi adapter in CD32 mode. A read that clocks the other way round (pin 6 idling low, each button clocked out by a short high pulse) suited those two, but got about one read in four wrong on the first KTRL.
+
+**Why.** Not proven. The likely reason is that pads and adapters differ in which clock edge they shift on, or in how they treat pin 6's level when pin 5 falls, so one clock shape cannot suit all of them. FAmiga also tried picking the read from the pad's ID bits, and it was not reliable across testers' pads.
+
+**Fix.** FAmiga keeps both reads in one routine, chosen per port by a bit in a second register, and gives the player a menu choice for each port ("CD32 pad" or "KTRL CD32+"). Its readme tells the player to try the other choice if a held button flickers. The routine is in the kit as `cd32read.s`, with the image clock (pin 6 written from a copy of the port byte instead of toggled with `eor` on the register, which FS-UAE's and WinUAE's pad emulation can follow) and the two ID bits.
+
+**Evidence.** JOYTEST, one button held per run: on the KTRL CD32, the kit's read was right every time and the low clock about one in four wrong. On a KTRL CD32+, the low clock had 0 wrong in 640 reads and the kit's read 12. On the Mega Multi, the low clock was right on B, C and A and the kit's read was wrong. **Look up:** [kits/cd32pad](../kits/cd32pad/README.md#two-readers-picked-per-port).
+
+*Source: FAmiga 1.00 by Afrotechmods (freeware; the CD32 readers' changes are given with no conditions), `cd32read`/`cd32pads`; the low clock's idea from Keir Fraser's Amiga Test Kit and AROS's lowlevel.library, no code copied.*
+
 ## CD32 pads from C, with the operating system running (Arnold)
 
 *Arnold.* Arnold runs as an ordinary AmigaOS program, so it could have left the pads to lowlevel.library. On a PiStorm that did not work. Arnold now reads the pad itself, using the same protocol as AmiMSX. Both reads are in a standalone kit under an MIT licence: [kits/cd32pad](../kits/cd32pad/README.md).
