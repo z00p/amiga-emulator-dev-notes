@@ -43,6 +43,10 @@ Each lesson shows real code **before and after** a fix, the symptom it caused, a
 | 12 | [RTG output](chapters/12-rtg.md) | Arnold (rtgfw, MIT), AmiPCEngine |
 | 13 | [Working with Claude on Amiga projects](chapters/13-working-with-claude.md) | all three, and the A1200 setup notes (section 3) |
 
+## References
+
+[REFERENCES.md](REFERENCES.md) lists the handbooks, datasheets and online sources behind the projects (MSX, CPC, PC Engine, Game Boy, Amiga) and where to find them.
+
 ## Code kits
 
 Small routines taken out of the projects so they can be used on their own, under the MIT licence:
