@@ -51,7 +51,7 @@ FAmiga also tried telling pads apart from their ID bits, and it was not reliable
 
 `cd32read` changes since `cd32pad.s` (all explained in comments marked `[CHANGE n]` in the file):
 - the image clock: pin 6 is written from a copy of the port byte instead of toggled with `eor` on the register, so FS-UAE and WinUAE's pad emulation can follow it;
-- the latch wait is 35 CIA reads (about 50 µs, the C version's figure) instead of 200, and both waits are words in memory (`_cd32_latch`, `_cd32_clock`);
+- the latch wait is 35 CIA reads (about 50 µs, the C version's figure) instead of 200, and both waits are words in memory (`_cd32_latch`, `_cd32_clock`). **Set `_cd32_latch` to 200**: AmiGameBoy found a KTRL CD32 pad whose green, yellow and play buttons flicker at 35 and are solid at 200, and the Mega Multi adapter needs 200 with the low clock (chapter 05, [A pad test in every build](../../chapters/05-input.md#a-pad-test-in-every-build-amigameboy));
 - the two ID bits are read too;
 - the plain-joystick rule and the interrupt switch-off move to the caller (`cd32pads`).
 

@@ -200,9 +200,63 @@ The directions still come from `JOY1DAT`. Red is fire 1, and blue, yellow and gr
 
 - **Read once or twice a frame.** Old snippets say a vertical blank must pass between two reads. In practice that is not needed. AmiPCEngine 1.4 reads the pad twice a frame on RTG: once at the vertical blank, and again just before it emulates the frame, to cut lag (see [On a fast machine, start the frame late and read the pad again first](#on-a-fast-machine-start-the-frame-late-and-read-the-pad-again-first)). This has caused no trouble with real pads on CD32 adapters.
 - **Adapters send Start as play.** Use play for the console's Start or Run button. AmiPCEngine takes both shoulder buttons together as "back to the menu".
-- **The latch wait.** AmiMSX waits about 300 microseconds for pin 5 to fall before the first bit. Arnold waits about 50 microseconds. Both work with the pads above. If a pad or adapter loses the first button (blue), lengthen the wait.
+- **The latch wait.** AmiMSX waits about 300 microseconds for pin 5 to fall before the first bit. Arnold waits about 50 microseconds. Both work with the pads above. If a pad or adapter loses the first button (blue), lengthen the wait. AmiGameBoy later found a KTRL CD32 whose green, yellow and play buttons flicker with the 50 microsecond wait and are solid with 300 (see [A pad test in every build](#a-pad-test-in-every-build-amigameboy)), so 200 CIA reads is the safer default.
 - **The asm kit routine pushes three registers.** That is fine in most programs. In one like AmiMSX, where interrupts run on a borrowed A7, keep them in memory (see "No stack here" above).
 - **Directions in a nibble swap.** AmiPCEngine's first CD32 mapping put the d-pad into the buttons and the buttons into the d-pad. The bit order of the read is easy to mislabel, so test each button with a raw-bits tool (the kit's `cd32test`) before you map them.
+
+## A pad test in every build (AmiGameBoy)
+
+*AmiGameBoy 2.0, November 2026.*
+
+### Test the pad through the whole emulator, not only the read
+
+**Problem.** AmiGameBoy 2.0 took the kit's `cd32read.s` (FAmiga's two readers) in place of 1.0's read. In WinUAE everything passed: its emulated CD32 pad answers both clocks, with the ID bits on every read and no stray buttons. But WinUAE cannot hold a button down for a test, so no real press went through the new code before the A1200. There, on a KTRL CD32 pad, red and blue were solid and green, yellow and play flickered in the games. A day earlier the same pad had read "red only" in both AmiGameBoy and Arnold, which use the same kit read. A raw-bits tool on the host shows what the read returns, but not what the game sees after the mapping, the config file and the emulated joypad register.
+
+**Before.** The kit's latch wait, 35 CIA reads (about 50 microseconds, FAmiga's figure):
+
+```
+        move.w  d4,CUSTOM+POTGO         ; pin 5 low: the pad latches its buttons
+        move.w  _cd32_latch,d2          ; the latch wait
+.latch: tst.b   CIAAPRA
+        dbf     d2,.latch
+        ...
+_cd32_latch:    dc.w    35
+```
+
+**After.** A test cartridge for the guest machine, `PadTest.gb`, made by a script in the repo (`tools/padtest_rom.py`, our own code and font, no third-party data). It draws one line for each Game Boy button: the button's name, the CD32 button mapped to it in the default config, and a box that fills while the game sees the button held. It runs until it is quit, so the tester holds a button, looks and takes a photo, with nothing to time. With it, three named builds showed the cause in one sitting. The 1.0 read (200-read wait) and the kit's read with a 200-read wait were solid on every button, and the kit's read with 35 flickered. So the fix is the wait, not the reader:
+
+```
+	IFND	HY_CD32LATCH
+HY_CD32LATCH	=35			; test switch: the latch wait in CIA reads
+	ENDC
+_cd32_latch:	dc.w	HY_CD32LATCH		; release builds: -DHY_CD32LATCH=200
+```
+
+**Why.** Pin 5 carries the pot capacitor, and on this pad it had not fallen after 50 microseconds, so the pad was still latching when the clocking began and the later bits came and went. 200 CIA reads (about 300 microseconds) is the time [Drive pin 6 high before pin 5 falls](#drive-pin-6-high-before-pin-5-falls) gives. The same test settled the Mega Multi adapter (CD32 mode, Mega Drive pad), which needs FAmiga's low clock *and* the long wait. It also showed that the adapter does not send Start on either read.
+
+**Evidence.** PiStorm A1200, port 2, PadTest.gb, the photos read button by button:
+
+| Pad | Read | Wait (CIA reads) | Result |
+|---|---|---|---|
+| KTRL CD32 | low clock | 35 | red, blue solid; green, yellow, play flicker |
+| KTRL CD32 | 1.0 read | 200 | all solid |
+| KTRL CD32 | kit, normal clock | 200 | all solid |
+| Mega Multi | normal clock | 35 or 200 | A flickers into Select; B reads as A + B |
+| Mega Multi | low clock | 35 | nothing at all |
+| Mega Multi | low clock | 200 | A and B solid; Start not sent |
+
+**Look up.** AmiGameBoy `tools/padtest_rom.py`, `src/hybrid/cd32read.s` (`HY_CD32LATCH`); kit [cd32read.s](../kits/cd32pad/README.md#two-readers-picked-per-port).
+
+### Recommendation: ship a pad test with each emulator
+
+The test cartridge took a minute to run and replaced a day of guessing, and it is just as useful to a user with an odd pad as it is to us. So:
+
+- **Make one for each guest machine**, in the machine's own format: a Game Boy cartridge, an MSX ROM, a PC Engine HuCard, a CPC disk. It reads the guest's own joypad register, so it tests the whole path: the host read, the mapping, the config file and the emulated hardware.
+- **What it shows:** one line for each guest button, with the host button that drives it and a box filled while held, plus the read in use if there is a choice (AmiGameBoy's `Pad = CD32 pad` or `KTRL CD32+`). Big enough to read on a phone photo of a TV.
+- **No time limit** and no console output, so the tester presses when ready and photographs the screen (see [Give the tester a test they can do](13-working-with-claude.md#give-the-tester-a-test-they-can-do-and-a-tool-that-records-it)).
+- **Our own code and graphics only**, built by a script in the repo, so it can go in the release archive under the emulator's licence. No logos and no copied boot code (the Game Boy cartridge carries no Nintendo logo, so it runs only in an emulator, which is all it is for).
+- **Ship it in the archive**, in the same drawer as the program, and point to it in the ReadMe's pad section: "If a button flickers or does nothing, run PadTest, try the other Pad setting, and send a photo with your pad's name."
+- **Keep the host-side tool as well**: the kit's `cd32test` shows the raw bits before any mapping, and the two together say whether a fault is in the read or after it.
 
 ## Keyboard mapping
 
