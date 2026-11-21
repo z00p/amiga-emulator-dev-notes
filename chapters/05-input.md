@@ -258,6 +258,82 @@ The test cartridge took a minute to run and replaced a day of guessing, and it i
 - **Ship it in the archive**, in the same drawer as the program, and point to it in the ReadMe's pad section: "If a button flickers or does nothing, run PadTest, try the other Pad setting, and send a photo with your pad's name."
 - **Keep the host-side tool as well**: the kit's `cd32test` shows the raw bits before any mapping, and the two together say whether a fault is in the read or after it.
 
+## Two pads at once, and the controllers tested so far (AmiPCEngine)
+
+*AmiPCEngine 2.4, November 2026.*
+
+### Read a CD32 port before a plain read of the other port
+
+**Problem.** AmiPCEngine 2.4 added two players: a pad on each port makes the emulated PC Engine see a multitap. On the PiStorm A1200, with a joystick on port 1 and a KTRL CD32 pad on port 2 (set to "KTRL CD32+" or "CD32 Joypad"), the KTRL's face buttons did nothing. Its directions worked, and its shoulders made the fighter jump. The same pad worked on port 2 with port 1 on None, and on port 1 with the joystick on port 2. With the joystick adapter still plugged into port 1 but port 1 set to None, the KTRL worked, so the adapter was not the cause.
+
+**Before** (`src/Main.asm`, AmiPCEngine 2.4 RC1): port 1 was always read first.
+
+```
+LeePads:
+	MOVE.L	PadRut1,A0	; port 1 (joystick: POTGO $FF00, then a POTINP read)
+	JSR	(A0)
+	...
+	MOVE.L	PadRut2,A0	; port 2 (CD32 pad: cd32read)
+	JSR	(A0)
+```
+
+**After** (`src/Main.asm`, commit 1d82c56, switch `NO_PADORD`): a CD32 pad on port 2 is read first.
+
+```
+	MOVE.L	PadRut2,D0
+	CMP.L	#PadCD2,D0	; "CD32 Joypad" on port 2?
+	BEQ.S	.p2first
+	CMP.L	#PadKL2,D0	; "KTRL CD32+" on port 2?
+	BEQ.S	.p2first
+	...
+.p2first:
+	MOVE.L	D0,A0
+	JSR	(A0)		; the CD32 read before any plain read
+	MOVE.B	D3,JoyX(A3)	; port 2 = player 1
+	...			; then port 1, into player 2
+```
+
+**Why.** Not proven. "Shoulders make him jump, face buttons dead" is how this pad behaves when it is not being read as a CD32 pad: in its joystick mode a shoulder button is Up, and our CD32 read then finds no CD32 answer and drops the buttons. The only difference between the failing order and the working ones was a plain read of port 1 (a POTGO write and a POTINP read) a few microseconds before the CD32 read pulled pin 5 low. With the CD32 read first, the plain read comes after it, which is the order that already worked with the pads swapped.
+
+**Evidence.** PiStorm A1200, Art of Fighting VS mode and PadTest.pce. Before: KTRL on port 2 with a joystick on port 1, face buttons dead in 1 of 1 runs; KTRL on port 1 with the joystick on port 2, all buttons fine. After (test build "Pad Order"): KTRL face buttons fine on port 2 with the joystick on port 1. Two CD32 pads at once (port 2 read first, port 1 straight after) also worked.
+
+**Look up.** AmiPCEngine commit 1d82c56 (`NO_PADORD`); the kit's [cd32read.s](../kits/cd32pad/README.md#two-readers-picked-per-port).
+
+### The controllers tested so far
+
+All on the PiStorm A1200, read through the kit's `cd32read` with the 200-read latch wait, and checked with each emulator's pad test. A switchable pad answers the way it is read: clocked as a CD32 pad it answers as one; read as a joystick it falls back to its own joystick mode.
+
+| Controller | "CD32 Joypad" | "KTRL CD32+" | "Joystick" (plain read) |
+|---|---|---|---|
+| KTRL CD32 (standard, Super Nintendo shape) | all buttons | all buttons | red and green fire 1, yellow and blue fire 2, shoulders send Up |
+| PlayStation 2 pad through a PlayStation-to-Amiga adapter | see the next table | not tried | two fire buttons (cross, triangle), circle sends Up |
+| Mega Multi adapter, CD32 mode, 3-button Mega Drive pad | A unreliable | B solid, A unreliable in later tests, Start not sent (see the table above) | not tried |
+
+The KTRL and the PlayStation adapter put the CD32 colours in the same places on the diamond, so one mapping suits both. AmiPCEngine's default:
+
+| Position | KTRL | PlayStation | CD32 bit | PC Engine |
+|---|---|---|---|---|
+| bottom | red | cross | red | II |
+| right | blue | circle | blue | I |
+| left | green | square | green | Select |
+| top | yellow | triangle | yellow | Run |
+| shoulders | L, R | L1, L2 | left, right shoulder | I, II |
+| start | (none) | Start | play | Run |
+| - | - | R1, R2, Select | not sent by the adapter | - |
+
+So bottom and right give II and I, which keeps II to the left of I as on a PC Engine pad. The weak spot is Run on a face button: a stray press pauses most games. A layout choice (and the PC Engine's six-button pad) is planned for 2.5.
+
+### A test matrix for every release with two players
+
+The bug above only showed with one pad type in each port in one order, so a one-pad test would never have found it. Before a release with two players, run the pad test with:
+
+1. Each pad type alone on each port (the other on None).
+2. Each pair of types, both ways round (a CD32 pad on port 1 and a joystick on port 2, then swapped).
+3. Two CD32 pads at once.
+4. A two-player game in VS mode, checking that each pad drives its own player.
+
+The symptom to watch for is a pad falling back to its joystick mode: directions fine, face buttons dead, a shoulder or a button acting as Up.
+
 ## Keyboard mapping
 
 ### A table of (bit, row) pairs, patched for the host keyboard's faults
