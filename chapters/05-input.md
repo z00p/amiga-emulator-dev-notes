@@ -99,7 +99,7 @@ A port left on Standard is never driven: its read is the old plain read, byte fo
 **Evidence.**
 - 4.1 switched the detection off (a build switch kept it for experiments), and 4.1.1 replaced it with the option and removed the probe code.
 - Tested in WinUAE with a build that dumps the raw pad bits into a keyboard matrix row: the option bytes load, each port's path runs, the plain configuration is byte-identical to before, and nothing spurious reaches the MSX. WinUAE's emulated pad never answered in the test harness (its keyboard-layout joystick is not live there), so the protocol itself was verified against WinUAE's source and not against a running pad.
-- Checked afterwards on a real A1200 with a KTRL CD32 pad: both fire buttons, Start/Play pausing and blue work; a plain joystick on Standard is unchanged. A Mega Multi adapter in its Standard mode first read as all seven CD32 buttons held (pin 9 never changes over the clocks), so Play paused the game: all seven at once is now taken as a plain pad. The same adapter in its CD32 mode did not answer the CD32 read in a later test (7 Nov 2026, AmiMSX 4.6 and the kit alike): only A and B worked, through the plain read. Whether that is the adapter or its setting is not known.
+- Checked afterwards on a real A1200 with a KTRL CD32 pad: both fire buttons, Start/Play pausing and blue work; a plain joystick on Standard is unchanged. A Mega Multi adapter in its Standard mode first read as all seven CD32 buttons held (pin 9 never changes over the clocks), so Play paused the game: all seven at once is now taken as a plain pad. The same adapter in its CD32 mode did not answer the CD32 read in a later test (7 Nov 2026, AmiMSX 4.6 and the kit alike): only A and B worked, through the plain read. Whether that is the adapter or its setting is not known. (Later: it answers FAmiga's low clock with a 200-read latch wait, read once a frame; see [One pad, two readers](#one-pad-two-readers-arnold).)
 
 **Look up.** Commits bee6430, 38d0b84, 4212d25; `PrefCD32`, `PrefCD32M`; notes in `Docs/open_issues.md` (the three CD32 entries).
 
@@ -232,7 +232,7 @@ HY_CD32LATCH	=35			; test switch: the latch wait in CIA reads
 _cd32_latch:	dc.w	HY_CD32LATCH		; release builds: -DHY_CD32LATCH=200
 ```
 
-**Why.** Pin 5 carries the pot capacitor, and on this pad it had not fallen after 50 microseconds, so the pad was still latching when the clocking began and the later bits came and went. 200 CIA reads (about 300 microseconds) is the time [Drive pin 6 high before pin 5 falls](#drive-pin-6-high-before-pin-5-falls) gives. The same test settled the Mega Multi adapter (CD32 mode, Mega Drive pad), which needs FAmiga's low clock *and* the long wait. It also showed that the adapter does not send Start on either read.
+**Why.** Pin 5 carries the pot capacitor, and on this pad it had not fallen after 50 microseconds, so the pad was still latching when the clocking began and the later bits came and went. 200 CIA reads (about 300 microseconds) is the time [Drive pin 6 high before pin 5 falls](#drive-pin-6-high-before-pin-5-falls) gives. The same test settled the Mega Multi adapter (CD32 mode, Mega Drive pad), which needs FAmiga's low clock *and* the long wait. It also showed that the adapter does not send Start on either read: Start is the adapter's own menu button (see [A pulsing button can be the adapter's auto-fire](#a-pulsing-button-can-be-the-adapters-auto-fire)).
 
 **Evidence.** PiStorm A1200, port 2, PadTest.gb, the photos read button by button:
 
@@ -244,6 +244,8 @@ _cd32_latch:	dc.w	HY_CD32LATCH		; release builds: -DHY_CD32LATCH=200
 | Mega Multi | normal clock | 35 or 200 | A flickers into Select; B reads as A + B |
 | Mega Multi | low clock | 35 | nothing at all |
 | Mega Multi | low clock | 200 | A and B solid; Start not sent |
+
+Later (21 Nov) the adapter turned out to have auto-fire set on A at some point, and in Arnold a second reader was in play; see [One pad, two readers](#one-pad-two-readers-arnold). The low clock with the 200-read wait, once a frame, is still the setting for this adapter.
 
 **Look up.** AmiGameBoy `tools/padtest_rom.py`, `src/hybrid/cd32read.s` (`HY_CD32LATCH`); kit [cd32read.s](../kits/cd32pad/README.md#two-readers-picked-per-port).
 
@@ -307,7 +309,7 @@ All on the PiStorm A1200, read through the kit's `cd32read` with the 200-read la
 |---|---|---|---|
 | KTRL CD32 (standard, Super Nintendo shape) | all buttons | all buttons | red and green fire 1, yellow and blue fire 2, shoulders send Up |
 | PlayStation 2 pad through a PlayStation-to-Amiga adapter | see the next table | not tried | two fire buttons (cross, triangle), circle sends Up |
-| Mega Multi adapter, CD32 mode, 3-button Mega Drive pad | A unreliable | B solid, A unreliable in later tests, Start not sent (see the table above) | not tried |
+| Mega Multi adapter, CD32 mode, 3-button Mega Drive pad | misread (bits slip a place) | A red, B blue, C forward shoulder, all solid read once a frame; Start not sent (it opens the adapter's menu) | not tried |
 
 The KTRL and the PlayStation adapter put the CD32 colours in the same places on the diamond, so one mapping suits both. AmiPCEngine's default:
 
@@ -333,6 +335,85 @@ The bug above only showed with one pad type in each port in one order, so a one-
 4. A two-player game in VS mode, checking that each pad drives its own player.
 
 The symptom to watch for is a pad falling back to its joystick mode: directions fine, face buttons dead, a shoulder or a button acting as Up.
+
+## One pad, two readers (Arnold)
+
+*Arnold 2.1.1, November 2026.*
+
+### lowlevel.library's extra ports can be the joystick port again
+
+**Problem.** Arnold 2.1 reads the CD32 pad in port 2 itself, then ORs in what lowlevel.library reports on its ports 2 and 3, so that USB pads under Poseidon work too. On the test PiStorm A1200, a Mega Multi adapter in CD32 mode pulsed fire 2 in PadTest.dsk, with either Pad setting, a shorter latch wait, a wider clock pulse and one read a frame. The KTRL CD32 seemed fine. A test build that also logged lowlevel's ports showed that Arnold's own read saw *no* buttons at all from the adapter on "KTRL CD32+". A and B reached the game only through lowlevel.library's port 3, and the pulsing was that port.
+
+**Before** (`amiga_joy.c`, 2.1): the USB ports are read on every frame.
+
+```c
+	if (LowLevelBase && !Sys_JoyPortOnly) {
+		for (port = 2; port < 4; port++) {
+			ULONG v = ReadJoyPort(port);
+			...	/* game controller or joystick: OR'd into the CPC joystick */
+```
+
+**After** (`amiga_joy.c`, 2.1.1, switch `NO_USBPADS`): only when the user asks for USB pads (Controls menu, `USBPADS=`, `usbpads=` in the prefs; off by default).
+
+```c
+	if (LowLevelBase && !Sys_JoyPortOnly && Sys_UsbPads) {
+```
+
+**Why.** On this A1200 the USB stack (Poseidon 4.5) had only a mouse attached, yet `ReadJoyPort(3)` returned a game controller that followed the pad in the joystick port button for button. So lowlevel.library was a second reader of the same pad, with its own CD32 read, in the same frame as ours. Two readers clock the pad at different times and with different timing, and an adapter that scans a Mega Drive pad behind the CD32 protocol does not keep up. After the adapter was unplugged and plugged back in, port 3 changed to "unknown" with blue toggling while nobody touched the pad.
+
+**Evidence.** `LLPorts`, a Shell tool printing `ReadJoyPort(0..3)` on every change, with the Mega Multi in port 2:
+
+```
+    0  p0 00000000  p1 10800000  p2 00000000  p3 10400000
+    1  p0 00000000  p1 10400000  p2 00000000  p3 10400000   <- p3 follows p1 (red), one sample ahead
+  125  p0 00000000  p1 10000000  p2 00000000  p3 40000000   <- after a replug: type unknown
+  241  p0 00000000  p1 10000000  p2 00000000  p3 40800000   <- blue toggling with the pad untouched
+  242  p0 00000000  p1 10000000  p2 00000000  p3 40000000
+```
+
+The test build's keys.log, one line when the CPC joystick changed: Arnold's own read (`raw`, ID bit only) and lowlevel's port 3:
+
+```
+joy 20 raw 00000100 ll2 00000000 ll3 10800000   <- fire 2 from port 3 (blue), none from our read
+joy 10 raw 00000100 ll2 00000000 ll3 10400000   <- fire 1 from port 3 (red)
+```
+
+With the USB ports off, the KTRL CD32 on "CD32" gave blue, red, green and yellow solid, and the Mega Multi on "KTRL CD32+" gave A and B solid (with the change below). PsdDevLister listed one USB device: the mouse.
+
+**Look up.** Arnold `amiga_joy.c` (`Sys_UsbPads`), `host_amiga.c` (`KEYLOG_LL` test builds); `Docs/agent_notes/release-2.1.1.md`.
+
+### An adapter may not take reads back to back
+
+**Problem.** With lowlevel's ports out of the way, the Mega Multi on "KTRL CD32+" was solid in Arnold's read at the start of each frame, but fire 2 still flickered on screen.
+
+**Before.** Arnold reads the pad again when the game reads the joystick, up to 4 times a frame, to cut lag ([Controller lag: the frame boundary and a late start](#controller-lag-the-frame-boundary-and-a-late-start-arnold)).
+
+**After** (`host_amiga.c`, 2.1.1, switch `NO_KTRLONCE`): a pad on the low clock is read once a frame, as CD32 games read a pad.
+
+```c
+	if (jr_n >= JR_MAX || n - jr_last < JR_GAP) return;
+#ifndef NO_KTRLONCE
+	if (Sys_PadType == 2) return;   /* KTRL CD32+: once a frame */
+#endif
+```
+
+**Why.** The re-reads are at least 2 ms of CPC time apart, but the CPC runs faster than real time, so on the host they can come much closer than a real game's once-a-frame read. The adapter reads its Mega Drive pad between CD32 reads; with reads close together, it answers before it has a fresh value. The KTRL CD32 on the normal clock took the re-reads without trouble.
+
+**Evidence.** Mega Multi, "KTRL CD32+", USB ports off: with re-reads, fire 2 flickered on screen (the start-of-frame log was clean); with `JOYREREAD=0` and in the 2.1.1 build, A and B were solid, one press and one release each in the log.
+
+### A pulsing button can be the adapter's auto-fire
+
+**Problem.** Earlier in the same hunt, A on the Mega Multi pulsed on and off at a steady rate in every reader: Arnold's, PadTest's hand read and lowlevel.library's.
+
+**Why.** The adapter has per-button auto-fire, set from its own menu. Hold Start for about a second to open it (the LED flashes); hold a button and press Up or Down to set its auto-fire speed, 1 to 4, where 1 is off; press Start to leave. Up and Down on their own change the mode (LED: yellow CD32, green Standard, blue Alternate, red light gun). That is also why Start never reaches the Amiga. In CD32 mode it sends A as red, B blue, C the forward shoulder, X green, Y yellow, Z the reverse shoulder and Mode as play.
+
+**How to tell.** A steady, regular toggle on one button, seen the same way by every reader including lowlevel.library, is the pad or the adapter, not the read. Turn auto-fire off before changing code. A read fault looks different: bits slipping a place, the ID bits coming and going, or several buttons at once.
+
+### Notes for every emulator
+
+- **One reader per pad.** If the host also asks lowlevel.library (or anything else) for USB pads, make it an option, off by default, and check with a port lister which of its ports are real on the tester's machine.
+- **Log every source the input comes from**, not only your own read. Here the bug was invisible until the log showed where fire 2 came from.
+- **Re-test the old claims after a cause is found.** Arnold 2.1's ReadMe said the KTRL worked on both settings and the Mega Multi's A was unreliable. Both were measured with the second reader in place.
 
 ## Keyboard mapping
 
