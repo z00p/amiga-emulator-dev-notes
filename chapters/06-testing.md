@@ -683,6 +683,48 @@ Each `mark` is a known byte in the log, so a difference can be placed at once.
 
 **Why.** The schedule is the same as the reference's, in emulated frames, so anything that reads it must run in emulated time. Compare [Scripted runs must ignore the host's input](05-input.md#scripted-runs-must-ignore-the-hosts-input), which removes the other host influence. **Evidence.** With the fix, per-frame CPU traces of 2100 frames were identical between two builds of different speed.
 
+### CD music against subtitles: two timelines the game keeps in step
+
+**Problem.** A user reported that a CD game's music "wasn't synced correctly or wasn't the right track". Listening and watching can't settle that: a quarter of a second sounds like a lot when you're looking for it, and recordings from two emulators never start at the same moment.
+
+**Method.** A voiced cutscene with subtitles gives two timelines that the game itself keeps together. The voice is a CD audio track, and the text is drawn by the game's code. Log both in emulated frames, in our build and in the reference emulator, with the same scripted input, and compare the logs. Nothing is measured on the wall clock, and nothing is judged by eye.
+
+- **The music.** At every frame end, log the audio player's start and end sectors, the sector playing, the sample within that sector, and the seek delay still to run. The reference's scripting interface exposes the same fields. Each play request then lines up in both logs, along with the frame it came in and the frame the position first moved.
+- **The right music.** Log the frame's last sample as the mixer took it, and look for it in the disc image near the logged position. This catches a wrong track, a wrong start point or a pregap counted twice, as well as a timing error. Our loader keeps CD audio at 22 kHz, with each stored sample the average of a pair from the disc, so the search compares against averaged pairs.
+- **The picture.** At every frame end, take a fingerprint of video RAM that doesn't depend on which way round an emulator keeps a word's bytes: the sum over words *w* of (*w* + 1) × (low byte + high byte). Each new fingerprint in the reference is a picture change, such as a subtitle line drawn or a scene loaded. Find the same fingerprint in ours, then compare where the music was at that frame on each side.
+
+The fingerprint loop, run once a frame (reduced):
+
+	LEA	VRAM+65536,A0
+	MOVEQ	#0,D1			; running sum of bytes
+	MOVEQ	#0,D2			; sum of running sums = sum (w + 1) * bytes
+	MOVE.W	#32768-1,D3
+.vs:	MOVEQ	#0,D0
+	MOVE.B	-(A0),D0
+	ADD.L	D0,D1
+	MOVE.B	-(A0),D0
+	ADD.L	D0,D1
+	ADD.L	D1,D2
+	DBF	D3,.vs
+
+*Source: AmiPCEngine development, src/CD.asm, switch AuDump (freeware by Juan Antonio Gómez Gálvez and z00p; used with permission).*
+
+**Evidence** (a voiced, subtitled intro of about two minutes, 8700 frames, WinUAE and the A1200 PiStorm):
+- **Play requests:** the same sectors as the reference, in the same order. The first came 4 frames earlier in ours and the second 16 frames earlier, because data loads between scenes finish a little sooner. Each track started on the frame of its request on both sides.
+- **The music against its request:** within 1-2 ms of the reference through the whole track, with no drift. Every captured sample (6668 of them) was found in the disc within 2 samples of the logged position.
+- **The picture:** 1341 of the reference's picture changes were found in ours. Ours started 6 frames ahead and gained a frame at most scene changes, ending 13 frames ahead. So by the end of the track the text came up to 9 frames (0.15 s) earlier against the voice than in the reference. It resets with each new track.
+- **The machine doesn't matter:** WinUAE and the A1200 gave the same logs, frame for frame. The emulated timeline is deterministic, and the host's speed only shows if it can't keep up, which the run's frames-to-vblanks figure reports (9000 frames in 9014 vblanks).
+
+**Why it works.** Our CD audio runs on emulated time: the play position advances with emulated cycles, and the mixer stretches each frame's samples to the Amiga's sound block. So audio can't drift from the picture by host timing. What's left to check is what the emulation itself does: which sectors, when the play starts, and how many frames the game's own work takes. Those are exactly what the logs compare.
+
+**Traps.**
+- **Set a threshold first.** The question was "seconds out?". Small offsets turn up at once (here 0.07-0.27 s in the game's timeline and up to 0.15 s for text against voice), and each is a CPU or load-timing study of its own. Write the offsets down and move on unless they reach the threshold.
+- **The reference must read the image.** The user's image had 2048-byte data sectors in a single BIN. The reference kept retrying the boot sector on it. A copy with the data tracks rewritten as 2352-byte sectors (sync, header, data, zero EDC; sector counts, so the cue's times, unchanged) booted, and the music sectors are in the same places. Run ours on the user's image and the reference on the copy.
+- **Leftover video RAM.** The first 2600 frames had no fingerprint match: our video RAM starts with other contents than the reference's, so the sums only agree once the game has overwritten everything. A fingerprint of the area the text uses would match from the start.
+- **Fingerprint cost.** The reference's script reads 64 KB a frame through the scripting interface: about 6 minutes for 7700 frames, which is fine. Ours adds a 32768-step loop a frame, so only use it in test builds.
+
+**Look up.** AmiPCEngine `tools/cddasync.py`, `mesen_cdda.lua`, `mesen_vramsig.lua`; switches `AdDump=1 AuDump=1` with `AutoExit` and `AutoPress`; notes `docs/agent_notes/cdsync.md`.
+
 ## The rig first
 
 ### A test config pointing at another checkout gives "no result" on every title
